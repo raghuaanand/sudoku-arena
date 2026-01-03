@@ -1,5 +1,16 @@
 {
   "env": {
     "PRISMA_GENERATE_DATAPROXY": "true"
-  }
+  },
+  "functions": {
+    "src/app/api/socket/io/route.ts": {
+      "maxDuration": 30
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/socket.io/(.*)",
+      "destination": "/api/socket/io"
+    }
+  ]
 }

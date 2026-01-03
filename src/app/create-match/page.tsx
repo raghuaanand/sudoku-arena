@@ -3,15 +3,31 @@
 import { useState } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Users, Trophy, Clock, DollarSign, Sparkles, Play, Zap, ArrowLeft } from 'lucide-react'
+import { 
+  Users, 
+  Trophy, 
+  Clock, 
+  Wallet, 
+  Play, 
+  Zap, 
+  ChevronLeft,
+  Grid3X3,
+  Bot,
+  ArrowRight,
+  Shield,
+  Target,
+  Sparkles,
+} from 'lucide-react'
 
 export default function CreateMatchPage() {
   const { data: session } = useSession()
   const router = useRouter()
   const [isCreating, setIsCreating] = useState(false)
+  const [selectedType, setSelectedType] = useState<string | null>(null)
 
   const createMatch = async (type: 'SINGLE_PLAYER' | 'MULTIPLAYER_FREE' | 'MULTIPLAYER_PAID', entryFee: number = 0) => {
     if (!session?.user?.id) {
@@ -20,330 +36,237 @@ export default function CreateMatchPage() {
     }
 
     setIsCreating(true)
+    setSelectedType(type)
 
     try {
       const response = await fetch('/api/matches', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          type,
-          entryFee,
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type, entryFee }),
       })
 
       if (!response.ok) {
         const errorText = await response.text()
         console.error('Response error:', errorText)
-        throw new Error(`Failed to create match: ${response.status} ${response.statusText}`)
+        throw new Error(`Failed to create match: ${response.status}`)
       }
 
       const data = await response.json()
-      console.log('API Response:', data) // Debug log
       
-      // Handle matchmaking responses
       if (data.status === 'queued') {
-        // Player has been added to queue, show message and redirect to queue page
-        alert(data.message || 'Added to matchmaking queue. Please wait for an opponent...')
-        router.push('/play/multiplayer') // Redirect to multiplayer page to show queue status
+        alert(data.message || 'Added to matchmaking queue...')
+        router.push('/play/multiplayer')
         return
       }
       
-      // Handle successful match creation/joining
       if ((data.success && data.match) || (data.match && !data.hasOwnProperty('success'))) {
-        // Redirect to the game room
-        const matchId = data.match.id
-        console.log('Redirecting to game:', matchId) // Debug log
-        router.push(`/game/${matchId}`)
+        router.push(`/game/${data.match.id}`)
       } else {
-        console.error('Invalid response format:', data) // Debug log
         throw new Error(data.error || data.message || 'Failed to create match')
       }
     } catch (error) {
       console.error('Error creating match:', error)
-      const errorMessage = error instanceof Error ? error.message : 'Failed to create match. Please try again.'
+      const errorMessage = error instanceof Error ? error.message : 'Failed to create match.'
       alert(errorMessage)
     } finally {
       setIsCreating(false)
+      setSelectedType(null)
     }
   }
 
   if (!session) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-[#1a1a2e] via-[#16213e] to-[#0f3460] relative overflow-hidden">
-        {/* Cosmic Background Elements */}
-        <div className="absolute inset-0 overflow-hidden">
-          <div className="absolute top-20 left-10 w-80 h-80 bg-gradient-to-r from-[#e94560]/20 to-[#f9ed69]/15 rounded-full mix-blend-multiply filter blur-3xl opacity-60 animate-pulse"></div>
-          <div className="absolute top-40 right-10 w-96 h-96 bg-gradient-to-l from-[#0f3460]/40 to-[#e94560]/25 rounded-full mix-blend-multiply filter blur-3xl opacity-50 animate-pulse" style={{animationDelay: '2s'}}></div>
-          <div className="absolute -bottom-32 left-1/2 transform -translate-x-1/2 w-[500px] h-[500px] bg-gradient-to-t from-[#f9ed69]/20 to-[#16213e]/30 rounded-full mix-blend-multiply filter blur-3xl opacity-40 animate-pulse" style={{animationDelay: '4s'}}></div>
-          
-          {/* Floating star particles */}
-          <div className="absolute top-1/4 left-1/4 w-2 h-2 bg-[#f9ed69] rounded-full animate-ping opacity-70"></div>
-          <div className="absolute top-1/3 right-1/3 w-1 h-1 bg-[#e94560] rounded-full animate-ping opacity-80" style={{animationDelay: '1s'}}></div>
-          <div className="absolute bottom-1/4 left-1/3 w-1.5 h-1.5 bg-[#0f3460] rounded-full animate-ping opacity-60" style={{animationDelay: '3s'}}></div>
-        </div>
-        
-        <div className="container mx-auto p-6 relative z-10">
-          <div className="flex items-center justify-center min-h-screen">
-            <div className="w-96 bg-gradient-to-br from-[#1a1a2e]/90 to-[#16213e]/90 backdrop-blur-md border border-[#e94560]/30 rounded-2xl shadow-2xl">
-              <div className="p-8 text-center">
-                <div className="relative inline-flex items-center justify-center w-16 h-16 mx-auto mb-6">
-                  <div className="absolute inset-0 bg-gradient-to-r from-[#e94560] to-[#f9ed69] rounded-full blur-lg opacity-50"></div>
-                  <Trophy className="relative h-8 w-8 text-white" />
-                </div>
-                <p className="mb-6 text-white/70">Please sign in to create a match</p>
-                <button 
-                  onClick={() => router.push('/auth/signin')}
-                  className="w-full bg-gradient-to-r from-[#e94560] to-[#f9ed69] hover:from-[#d63847] hover:to-[#f7e742] text-[#1a1a2e] font-medium py-3 px-6 rounded-xl transition-all duration-300 transform hover:scale-105 shadow-lg"
-                >
-                  Sign In
-                </button>
-              </div>
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <Card variant="elevated" className="w-full max-w-md">
+          <CardContent className="p-8 text-center space-y-6">
+            <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto">
+              <Grid3X3 className="w-8 h-8 text-primary" />
             </div>
-          </div>
-        </div>
+            <div>
+              <h2 className="text-xl font-semibold mb-2">Sign In Required</h2>
+              <p className="text-muted-foreground">Please sign in to create a match</p>
+            </div>
+            <Button onClick={() => router.push('/auth/signin')} className="w-full">
+              Sign In
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     )
   }
 
+  const gameTypes = [
+    {
+      id: 'SINGLE_PLAYER',
+      title: 'Solo Practice',
+      description: 'Practice your Sudoku skills at your own pace with no time pressure.',
+      icon: Bot,
+      badge: 'Free',
+      badgeVariant: 'success' as const,
+      features: [
+        { icon: Clock, text: 'No time limit' },
+        { icon: Target, text: 'All difficulty levels' },
+        { icon: Sparkles, text: 'Track your progress' },
+      ],
+      buttonText: 'Start Practice',
+      buttonVariant: 'default' as const,
+      entryFee: 0,
+    },
+    {
+      id: 'MULTIPLAYER_FREE',
+      title: 'Free Match',
+      description: 'Challenge other players in real-time. First to solve wins!',
+      icon: Users,
+      badge: 'Free',
+      badgeVariant: 'success' as const,
+      features: [
+        { icon: Clock, text: '30 min time limit' },
+        { icon: Users, text: 'Real-time opponent' },
+        { icon: Trophy, text: 'Earn ranking points' },
+      ],
+      buttonText: 'Find Match',
+      buttonVariant: 'outline' as const,
+      entryFee: 0,
+    },
+    {
+      id: 'MULTIPLAYER_PAID',
+      title: 'Prize Match',
+      description: 'Compete for real money! Winner takes 80% of the prize pool.',
+      icon: Trophy,
+      badge: '₹50 Entry',
+      badgeVariant: 'warning' as const,
+      features: [
+        { icon: Clock, text: '30 min time limit' },
+        { icon: Wallet, text: '₹80 prize (2 players)' },
+        { icon: Shield, text: 'Verified fair play' },
+      ],
+      buttonText: 'Join Match',
+      buttonVariant: 'premium' as const,
+      entryFee: 50,
+    },
+  ]
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#1a1a2e] via-[#16213e] to-[#0f3460] relative overflow-hidden">
-      {/* Cosmic Background Elements */}
-      <div className="absolute inset-0 overflow-hidden">
-        <div className="absolute top-20 left-10 w-80 h-80 bg-gradient-to-r from-[#e94560]/20 to-[#f9ed69]/15 rounded-full mix-blend-multiply filter blur-3xl opacity-60 animate-pulse"></div>
-        <div className="absolute top-40 right-10 w-96 h-96 bg-gradient-to-l from-[#0f3460]/40 to-[#e94560]/25 rounded-full mix-blend-multiply filter blur-3xl opacity-50 animate-pulse" style={{animationDelay: '2s'}}></div>
-        <div className="absolute -bottom-32 left-1/2 transform -translate-x-1/2 w-[500px] h-[500px] bg-gradient-to-t from-[#f9ed69]/20 to-[#16213e]/30 rounded-full mix-blend-multiply filter blur-3xl opacity-40 animate-pulse" style={{animationDelay: '4s'}}></div>
-        
-        {/* Floating star particles */}
-        <div className="absolute top-1/4 left-1/4 w-2 h-2 bg-[#f9ed69] rounded-full animate-ping opacity-70"></div>
-        <div className="absolute top-1/3 right-1/3 w-1 h-1 bg-[#e94560] rounded-full animate-ping opacity-80" style={{animationDelay: '1s'}}></div>
-        <div className="absolute bottom-1/4 left-1/3 w-1.5 h-1.5 bg-[#0f3460] rounded-full animate-ping opacity-60" style={{animationDelay: '3s'}}></div>
-      </div>
+    <div className="min-h-screen bg-background">
+      {/* Navigation */}
+      <header className="nav-header">
+        <div className="container-default">
+          <div className="flex h-16 items-center justify-between">
+            <div className="flex items-center gap-4">
+              <Link href="/dashboard">
+                <Button variant="ghost" size="icon-sm">
+                  <ChevronLeft className="w-5 h-5" />
+                </Button>
+              </Link>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-primary text-primary-foreground">
+                  <Play className="w-5 h-5" />
+                </div>
+                <span className="text-lg font-semibold">New Game</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </header>
 
-      <div className="container mx-auto p-6 space-y-8 relative z-10">
+      <main className="container-default py-8 space-y-8">
         {/* Header */}
-        <div className="bg-gradient-to-br from-[#1a1a2e]/90 to-[#16213e]/90 backdrop-blur-md border border-[#e94560]/30 rounded-2xl shadow-2xl overflow-hidden">
-          <div className="p-8">
-            <div className="flex items-center justify-center space-x-4">
-              <div className="relative">
-                <div className="absolute inset-0 bg-gradient-to-r from-[#f9ed69] to-[#e94560] rounded-full blur-lg opacity-50"></div>
-                <Trophy className="relative h-8 w-8 text-white" />
-              </div>
-              <h1 className="text-3xl font-bold bg-gradient-to-r from-[#f9ed69] to-[#e94560] bg-clip-text text-transparent">
-                Create New Match
-              </h1>
-              <Sparkles className="h-6 w-6 text-[#f9ed69] animate-pulse" />
-            </div>
-          </div>
+        <div className="text-center max-w-2xl mx-auto animate-fade-in-up">
+          <h1 className="text-heading text-3xl sm:text-4xl mb-4">
+            Choose Your Game Mode
+          </h1>
+          <p className="text-foreground-secondary text-lg">
+            Select how you want to play. Each mode offers a unique experience.
+          </p>
         </div>
 
-        <div className="grid md:grid-cols-3 gap-8">
-          {/* Single Player */}
-          <div className="bg-gradient-to-br from-[#1a1a2e]/90 to-[#16213e]/90 backdrop-blur-md border border-[#e94560]/30 rounded-2xl shadow-2xl overflow-hidden hover:border-[#e94560]/50 transition-all duration-300 transform hover:scale-105 group">
-            <div className="p-6 border-b border-[#e94560]/20">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  <div className="relative">
-                    <div className="absolute inset-0 bg-gradient-to-r from-[#e94560] to-[#f9ed69] rounded-full blur-lg opacity-50"></div>
-                    <Play className="relative h-6 w-6 text-white" />
-                  </div>
-                  <span className="text-white font-semibold text-lg">Solo Practice</span>
-                </div>
-                <div className="px-3 py-1 bg-gradient-to-r from-[#e94560]/20 to-[#f9ed69]/20 border border-[#e94560]/30 rounded-full">
-                  <span className="text-[#f9ed69] text-sm font-medium">Free</span>
-                </div>
-              </div>
-            </div>
-            <div className="p-6 space-y-6">
-              <div className="space-y-3">
-                <div className="flex items-center space-x-3 text-white/70">
-                  <Clock className="h-4 w-4 text-[#0f3460]" />
-                  <span className="text-sm">No time limit</span>
-                </div>
-                <div className="flex items-center space-x-3 text-white/70">
-                  <DollarSign className="h-4 w-4 text-[#f9ed69]" />
-                  <span className="text-sm">No entry fee</span>
-                </div>
-              </div>
-              <p className="text-white/70 text-sm leading-relaxed">
-                Practice your Sudoku skills against AI. Perfect for warming up or learning new strategies.
-              </p>
-              <button 
-                onClick={() => createMatch('SINGLE_PLAYER')}
-                disabled={isCreating}
-                className="w-full bg-gradient-to-r from-[#e94560] to-[#f9ed69] hover:from-[#d63847] hover:to-[#f7e742] disabled:from-gray-600 disabled:to-gray-700 text-[#1a1a2e] font-medium py-3 px-6 rounded-xl transition-all duration-300 transform hover:scale-105 shadow-lg disabled:transform-none disabled:cursor-not-allowed"
+        {/* Game Type Cards */}
+        <div className="grid md:grid-cols-3 gap-6 animate-fade-in-up stagger-1">
+          {gameTypes.map((type) => (
+            <Card 
+              key={type.id} 
+              variant={type.id === 'MULTIPLAYER_PAID' ? 'highlight' : 'interactive'}
+              className="relative overflow-hidden"
+            >
+              <Badge 
+                variant={type.badgeVariant} 
+                className="absolute top-4 right-4"
               >
-                {isCreating ? (
-                  <div className="flex items-center justify-center space-x-2">
-                    <div className="animate-spin rounded-full h-5 w-5 border-2 border-white/20 border-t-white"></div>
-                    <span>Creating...</span>
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-center space-x-2">
-                    <Play className="h-5 w-5" />
-                    <span>Start Solo Game</span>
-                  </div>
-                )}
-              </button>
-            </div>
-          </div>
+                {type.badge}
+              </Badge>
 
-          {/* Multiplayer Free */}
-          <div className="bg-gradient-to-br from-[#1a1a2e]/90 to-[#16213e]/90 backdrop-blur-md border border-[#0f3460]/30 rounded-2xl shadow-2xl overflow-hidden hover:border-[#0f3460]/50 transition-all duration-300 transform hover:scale-105 group">
-            <div className="p-6 border-b border-[#0f3460]/20">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  <div className="relative">
-                    <div className="absolute inset-0 bg-gradient-to-r from-[#0f3460] to-[#e94560] rounded-full blur-lg opacity-50"></div>
-                    <Users className="relative h-6 w-6 text-white" />
+              <CardHeader className="pb-4">
+                <div className="flex items-center gap-4 mb-4">
+                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${
+                    type.id === 'MULTIPLAYER_PAID' 
+                      ? 'bg-gradient-to-br from-primary to-primary-light text-primary-foreground' 
+                      : 'bg-primary/10 text-primary'
+                  }`}>
+                    <type.icon className="w-6 h-6" />
                   </div>
-                  <span className="text-white font-semibold text-lg">Multiplayer Free</span>
+                  <CardTitle className="text-xl">{type.title}</CardTitle>
                 </div>
-                <div className="px-3 py-1 bg-gradient-to-r from-[#0f3460]/20 to-[#e94560]/20 border border-[#0f3460]/30 rounded-full">
-                  <span className="text-[#0f3460] text-sm font-medium">Free</span>
-                </div>
-              </div>
-            </div>
-            <div className="p-6 space-y-6">
-              <div className="space-y-3">
-                <div className="flex items-center space-x-3 text-white/70">
-                  <Clock className="h-4 w-4 text-[#0f3460]" />
-                  <span className="text-sm">30 minutes max</span>
-                </div>
-                <div className="flex items-center space-x-3 text-white/70">
-                  <DollarSign className="h-4 w-4 text-[#f9ed69]" />
-                  <span className="text-sm">No entry fee</span>
-                </div>
-              </div>
-              <p className="text-white/70 text-sm leading-relaxed">
-                Challenge other players in real-time. First to solve wins bragging rights!
-              </p>
-              <button 
-                onClick={() => createMatch('MULTIPLAYER_FREE')}
-                disabled={isCreating}
-                className="w-full bg-gradient-to-r from-[#0f3460] to-[#e94560] hover:from-[#0a2850] hover:to-[#d63847] disabled:from-gray-600 disabled:to-gray-700 text-white font-medium py-3 px-6 rounded-xl transition-all duration-300 transform hover:scale-105 shadow-lg disabled:transform-none disabled:cursor-not-allowed"
-              >
-                {isCreating ? (
-                  <div className="flex items-center justify-center space-x-2">
-                    <div className="animate-spin rounded-full h-5 w-5 border-2 border-white/20 border-t-white"></div>
-                    <span>Creating...</span>
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-center space-x-2">
-                    <Users className="h-5 w-5" />
-                    <span>Create Free Match</span>
-                  </div>
-                )}
-              </button>
-            </div>
-          </div>
+                <p className="text-sm text-muted-foreground">{type.description}</p>
+              </CardHeader>
 
-          {/* Multiplayer Paid */}
-          <div className="bg-gradient-to-br from-[#1a1a2e]/90 to-[#16213e]/90 backdrop-blur-md border border-[#f9ed69]/30 rounded-2xl shadow-2xl overflow-hidden hover:border-[#f9ed69]/50 transition-all duration-300 transform hover:scale-105 group">
-            <div className="p-6 border-b border-[#f9ed69]/20">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  <div className="relative">
-                    <div className="absolute inset-0 bg-gradient-to-r from-[#f9ed69] to-[#e94560] rounded-full blur-lg opacity-50"></div>
-                    <Trophy className="relative h-6 w-6 text-white" />
-                  </div>
-                  <span className="text-white font-semibold text-lg">Prize Match</span>
-                </div>
-                <div className="px-3 py-1 bg-gradient-to-r from-[#e94560]/20 to-[#f9ed69]/20 border border-[#e94560]/30 rounded-full">
-                  <span className="text-[#e94560] text-sm font-medium">₹50 Entry</span>
-                </div>
-              </div>
-            </div>
-            <div className="p-6 space-y-6">
-              <div className="space-y-3">
-                <div className="flex items-center space-x-3 text-white/70">
-                  <Clock className="h-4 w-4 text-[#0f3460]" />
-                  <span className="text-sm">30 minutes max</span>
-                </div>
-                <div className="flex items-center space-x-3 text-white/70">
-                  <DollarSign className="h-4 w-4 text-[#f9ed69]" />
-                  <span className="text-sm">₹50 entry fee</span>
-                </div>
-              </div>
-              <p className="text-white/70 text-sm leading-relaxed">
-                Compete for real money! Winner takes 80% of the prize pool (₹80 for 2 players).
-              </p>
-              <button 
-                onClick={() => createMatch('MULTIPLAYER_PAID', 50)}
-                disabled={isCreating}
-                className="w-full bg-gradient-to-r from-[#f9ed69] to-[#e94560] hover:from-[#f7e742] hover:to-[#d63847] disabled:from-gray-600 disabled:to-gray-700 text-[#1a1a2e] font-medium py-3 px-6 rounded-xl transition-all duration-300 transform hover:scale-105 shadow-lg disabled:transform-none disabled:cursor-not-allowed"
-              >
-                {isCreating ? (
-                  <div className="flex items-center justify-center space-x-2">
-                    <div className="animate-spin rounded-full h-5 w-5 border-2 border-white/20 border-t-white"></div>
-                    <span>Creating...</span>
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-center space-x-2">
-                    <Zap className="h-5 w-5" />
-                    <span>Create Prize Match</span>
-                  </div>
-                )}
-              </button>
-            </div>
-          </div>
+              <CardContent className="space-y-6">
+                <ul className="space-y-3">
+                  {type.features.map((feature, i) => (
+                    <li key={i} className="flex items-center gap-3 text-sm">
+                      <feature.icon className="w-4 h-4 text-muted-foreground" />
+                      <span className="text-foreground-secondary">{feature.text}</span>
+                    </li>
+                  ))}
+                </ul>
+
+                <Button
+                  onClick={() => createMatch(type.id as 'SINGLE_PLAYER' | 'MULTIPLAYER_FREE' | 'MULTIPLAYER_PAID', type.entryFee)}
+                  disabled={isCreating}
+                  loading={isCreating && selectedType === type.id}
+                  variant={type.buttonVariant}
+                  className="w-full"
+                >
+                  {type.buttonText}
+                  <ArrowRight className="w-4 h-4" />
+                </Button>
+              </CardContent>
+            </Card>
+          ))}
         </div>
 
-        <div className="relative">
-          <div className="absolute inset-0 bg-gradient-to-br from-[#e94560]/10 to-[#0f3460]/10 rounded-xl"></div>
-          <div className="relative bg-[#1a1a2e]/90 backdrop-blur-md border border-[#e94560]/20 rounded-xl shadow-2xl overflow-hidden">
-            <div className="absolute inset-0 bg-gradient-to-br from-[#e94560]/5 to-[#0f3460]/5"></div>
-            <div className="relative border-b border-[#e94560]/20 bg-gradient-to-r from-[#1a1a2e]/90 to-[#16213e]/90 p-6">
-              <h3 className="text-2xl font-bold text-white flex items-center space-x-3">
-                <div className="relative">
-                  <div className="absolute inset-0 bg-gradient-to-r from-[#e94560] to-[#f9ed69] rounded-full blur-lg opacity-50"></div>
-                  <Sparkles className="relative h-6 w-6 text-white" />
+        {/* How It Works */}
+        <Card className="animate-fade-in-up stagger-2">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-muted-foreground" />
+              How It Works
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid md:grid-cols-3 gap-6">
+              {[
+                {
+                  title: 'Solo Practice',
+                  description: 'Play against yourself with no time pressure. Perfect for learning strategies.',
+                },
+                {
+                  title: 'Free Matches',
+                  description: 'Get matched with real players instantly. First to solve the puzzle wins.',
+                },
+                {
+                  title: 'Prize Matches',
+                  description: 'Entry fees build the prize pool. Winners take 80% of the total.',
+                },
+              ].map((item, i) => (
+                <div key={i} className="space-y-2">
+                  <h4 className="font-semibold">{item.title}</h4>
+                  <p className="text-sm text-muted-foreground">{item.description}</p>
                 </div>
-                <span>How the Cosmic Arena Works</span>
-              </h3>
+              ))}
             </div>
-            <div className="p-6 space-y-6">
-              <div className="space-y-4">
-                <div className="group p-4 bg-gradient-to-r from-[#e94560]/10 to-[#f9ed69]/10 border border-[#e94560]/20 rounded-lg hover:border-[#e94560]/40 transition-all duration-300">
-                  <h4 className="font-semibold mb-2 text-white flex items-center space-x-2">
-                    <div className="w-2 h-2 bg-gradient-to-r from-[#e94560] to-[#f9ed69] rounded-full"></div>
-                    <span>Single Player Training</span>
-                  </h4>
-                  <p className="text-white/70 text-sm">Master your skills against our advanced AI in unlimited time. Perfect for honing your cosmic puzzle-solving abilities.</p>
-                </div>
-                <div className="group p-4 bg-gradient-to-r from-[#0f3460]/10 to-[#e94560]/10 border border-[#0f3460]/20 rounded-lg hover:border-[#0f3460]/40 transition-all duration-300">
-                  <h4 className="font-semibold mb-2 text-white flex items-center space-x-2">
-                    <div className="w-2 h-2 bg-gradient-to-r from-[#0f3460] to-[#e94560] rounded-full"></div>
-                    <span>Multiplayer Free Duels</span>
-                  </h4>
-                  <p className="text-white/70 text-sm">Challenge other cosmic warriors in real-time battles. No stakes, just pure competitive thrill and glory.</p>
-                </div>
-                <div className="group p-4 bg-gradient-to-r from-[#f9ed69]/10 to-[#e94560]/10 border border-[#f9ed69]/20 rounded-lg hover:border-[#f9ed69]/40 transition-all duration-300">
-                  <h4 className="font-semibold mb-2 text-white flex items-center space-x-2">
-                    <div className="w-2 h-2 bg-gradient-to-r from-[#f9ed69] to-[#e94560] rounded-full"></div>
-                    <span>Prize Tournaments</span>
-                  </h4>
-                  <p className="text-white/70 text-sm">Enter the ultimate cosmic arena! Entry fees fuel the prize pool. Champions claim 80% of the stellar rewards.</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-      <div className="text-center">
-        <button 
-          onClick={() => router.push('/dashboard')}
-          className="group relative px-8 py-3 bg-gradient-to-r from-[#e94560]/20 to-[#0f3460]/20 border border-[#e94560]/30 rounded-xl text-white font-medium transition-all duration-300 hover:from-[#e94560]/30 hover:to-[#0f3460]/30 hover:border-[#e94560]/50 hover:shadow-lg hover:scale-105"
-        >
-          <div className="absolute inset-0 bg-gradient-to-r from-[#e94560] to-[#0f3460] rounded-xl opacity-0 group-hover:opacity-20 transition-opacity duration-300"></div>
-          <span className="relative flex items-center space-x-2">
-            <ArrowLeft className="h-4 w-4" />
-            <span>Return to Cosmic Dashboard</span>
-          </span>
-        </button>
-      </div>
-      </div>
+          </CardContent>
+        </Card>
+      </main>
     </div>
   )
 }

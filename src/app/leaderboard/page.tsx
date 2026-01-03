@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -11,11 +12,11 @@ import {
   Medal, 
   Star,
   TrendingUp,
-  Users,
-  Calendar,
   Award,
   Crown,
-  Target
+  Grid3X3,
+  ChevronLeft,
+  Users,
 } from 'lucide-react'
 
 interface UserRanking {
@@ -63,20 +64,21 @@ export default function LeaderboardPage() {
   const fetchData = async () => {
     setLoading(true)
     try {
-      // Fetch rankings
-      const rankingsResponse = await fetch(`/api/rankings?period=${period}&limit=50`)
-      if (rankingsResponse.ok) {
-        const rankingsData = await rankingsResponse.json()
-        setRankings(rankingsData.rankings)
-        setCurrentUser(rankingsData.currentUser)
+      const [rankingsRes, achievementsRes] = await Promise.all([
+        fetch(`/api/rankings?period=${period}&limit=50`),
+        fetch('/api/achievements')
+      ])
+
+      if (rankingsRes.ok) {
+        const rankingsData = await rankingsRes.json()
+        setRankings(rankingsData.rankings || [])
+        setCurrentUser(rankingsData.currentUser || null)
       }
 
-      // Fetch achievements
-      const achievementsResponse = await fetch('/api/achievements')
-      if (achievementsResponse.ok) {
-        const achievementsData = await achievementsResponse.json()
-        setAchievements(achievementsData.achievements)
-        setTotalPoints(achievementsData.totalPoints)
+      if (achievementsRes.ok) {
+        const achievementsData = await achievementsRes.json()
+        setAchievements(achievementsData.achievements || [])
+        setTotalPoints(achievementsData.totalPoints || 0)
       }
     } catch (error) {
       console.error('Error fetching leaderboard data:', error)
@@ -85,250 +87,264 @@ export default function LeaderboardPage() {
     }
   }
 
-  const getRankIcon = (rank: number) => {
-    switch (rank) {
-      case 1:
-        return <Crown className="w-6 h-6 text-yellow-500" />
-      case 2:
-        return <Medal className="w-6 h-6 text-gray-400" />
-      case 3:
-        return <Medal className="w-6 h-6 text-amber-600" />
-      default:
-        return <span className="w-6 h-6 flex items-center justify-center text-sm font-semibold text-gray-600">#{rank}</span>
-    }
+  const getRankDisplay = (rank: number) => {
+    if (rank === 1) return <Crown className="w-5 h-5 text-amber-500" />
+    if (rank === 2) return <Medal className="w-5 h-5 text-gray-400" />
+    if (rank === 3) return <Medal className="w-5 h-5 text-amber-700" />
+    return <span className="text-sm font-semibold text-muted-foreground">#{rank}</span>
   }
 
-  const getRankBadgeColor = (rank: number) => {
-    if (rank === 1) return 'bg-gradient-to-r from-yellow-400 to-yellow-600'
-    if (rank === 2) return 'bg-gradient-to-r from-gray-300 to-gray-500'
-    if (rank === 3) return 'bg-gradient-to-r from-amber-400 to-amber-600'
-    if (rank <= 10) return 'bg-gradient-to-r from-blue-400 to-blue-600'
-    return 'bg-gradient-to-r from-gray-400 to-gray-600'
+  const getRankStyle = (rank: number) => {
+    if (rank === 1) return 'bg-gradient-to-r from-amber-500/20 to-amber-500/10 border-amber-500/30'
+    if (rank === 2) return 'bg-gradient-to-r from-gray-400/20 to-gray-400/10 border-gray-400/30'
+    if (rank === 3) return 'bg-gradient-to-r from-amber-700/20 to-amber-700/10 border-amber-700/30'
+    return 'border-border hover:bg-muted/30'
   }
 
-  const renderRankings = () => (
-    <div className="space-y-6">
-      {/* Period Selector */}
-      <div className="flex gap-2">
-        {[
-          { key: 'all', label: 'All Time' },
-          { key: 'month', label: 'This Month' },
-          { key: 'week', label: 'This Week' }
-        ].map(({ key, label }) => (
-          <Button
-            key={key}
-            variant={period === key ? 'default' : 'outline'}
-            onClick={() => setPeriod(key as any)}
-          >
-            {label}
-          </Button>
-        ))}
-      </div>
-
-      {/* Current User Stats */}
-      {currentUser && (
-        <Card className="border-blue-200 bg-blue-50">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Target className="w-5 h-5 text-blue-600" />
-              Your Ranking
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-bold ${getRankBadgeColor(currentUser.rank)}`}>
-                  {currentUser.rank <= 3 ? getRankIcon(currentUser.rank) : `#${currentUser.rank}`}
-                </div>
-                <div>
-                  <h3 className="font-semibold text-lg">{currentUser.name}</h3>
-                  <p className="text-sm text-gray-600">
-                    {currentUser.totalWins} wins • {currentUser.winRate}% win rate
-                  </p>
-                </div>
-              </div>
-              <div className="text-right">
-                <div className="text-2xl font-bold text-blue-600">#{currentUser.rank}</div>
-                <div className="text-sm text-gray-500">{currentUser.totalMatches} matches</div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Top Players */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Trophy className="w-5 h-5 text-yellow-500" />
-            Top Players
-          </CardTitle>
-          <CardDescription>
-            {period === 'all' ? 'All-time' : period === 'month' ? 'This month' : 'This week'} leaderboard
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            {rankings.map((user, index) => (
-              <div
-                key={user.id}
-                className={`flex items-center justify-between p-4 rounded-lg border ${
-                  user.id === session?.user?.id ? 'border-blue-200 bg-blue-50' : 'border-gray-200 hover:bg-gray-50'
-                }`}
-              >
-                <div className="flex items-center gap-4">
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold ${getRankBadgeColor(user.rank)}`}>
-                    {user.rank <= 3 ? getRankIcon(user.rank) : user.rank}
-                  </div>
-                  <div>
-                    <h3 className="font-semibold">{user.name}</h3>
-                    <p className="text-sm text-gray-600">
-                      Joined {new Date(user.joinedAt).toLocaleDateString()}
-                    </p>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="font-semibold">{user.totalWins} wins</div>
-                  <div className="text-sm text-gray-500">
-                    {user.winRate}% • {user.totalMatches} matches
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  )
-
-  const renderAchievements = () => (
-    <div className="space-y-6">
-      {/* Achievement Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card>
-          <CardContent className="p-4 text-center">
-            <Award className="w-8 h-8 text-blue-500 mx-auto mb-2" />
-            <div className="text-2xl font-bold">{achievements.filter(a => a.unlocked).length}</div>
-            <div className="text-sm text-gray-600">Achievements Unlocked</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 text-center">
-            <Star className="w-8 h-8 text-yellow-500 mx-auto mb-2" />
-            <div className="text-2xl font-bold">{totalPoints}</div>
-            <div className="text-sm text-gray-600">Total Points</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 text-center">
-            <TrendingUp className="w-8 h-8 text-green-500 mx-auto mb-2" />
-            <div className="text-2xl font-bold">
-              {Math.round((achievements.filter(a => a.unlocked).length / achievements.length) * 100)}%
-            </div>
-            <div className="text-sm text-gray-600">Completion Rate</div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Achievements Grid */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Award className="w-5 h-5 text-purple-500" />
-            Achievements
-          </CardTitle>
-          <CardDescription>
-            Unlock achievements by completing various challenges and milestones
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {achievements.map((achievement) => (
-              <Card
-                key={achievement.id}
-                className={`relative overflow-hidden ${
-                  achievement.unlocked 
-                    ? 'border-green-200 bg-green-50' 
-                    : 'border-gray-200 bg-gray-50 opacity-75'
-                }`}
-              >
-                <CardContent className="p-4">
-                  <div className="flex items-start justify-between mb-2">
-                    <div className="text-2xl">{achievement.icon}</div>
-                    {achievement.unlocked && (
-                      <Badge variant="default" className="bg-green-600">
-                        Unlocked
-                      </Badge>
-                    )}
-                  </div>
-                  <h3 className="font-semibold mb-1">{achievement.title}</h3>
-                  <p className="text-sm text-gray-600 mb-2">{achievement.description}</p>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-blue-600">
-                      {achievement.points} points
-                    </span>
-                    {achievement.unlocked && achievement.unlockedAt && (
-                      <span className="text-xs text-gray-500">
-                        {new Date(achievement.unlockedAt).toLocaleDateString()}
-                      </span>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  )
+  if (!session?.user?.id) return null
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <h3 className="text-lg font-semibold mb-2">Loading Leaderboard...</h3>
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <div className="w-12 h-12 rounded-full border-2 border-muted border-t-primary animate-spin mx-auto" />
+          <p className="text-muted-foreground">Loading leaderboard...</p>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      {/* Header */}
-      <div className="flex justify-between items-center mb-8">
-        <div>
-          <h1 className="text-3xl font-bold flex items-center gap-2">
-            <Trophy className="h-8 w-8 text-yellow-500" />
-            Leaderboard
-          </h1>
-          <p className="text-gray-600">Track your progress and compete with other players</p>
+    <div className="min-h-screen bg-background">
+      {/* Navigation */}
+      <header className="nav-header">
+        <div className="container-default">
+          <div className="flex h-16 items-center justify-between">
+            <div className="flex items-center gap-4">
+              <Link href="/dashboard">
+                <Button variant="ghost" size="icon-sm">
+                  <ChevronLeft className="w-5 h-5" />
+                </Button>
+              </Link>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-primary text-primary-foreground">
+                  <Trophy className="w-5 h-5" />
+                </div>
+                <span className="text-lg font-semibold">Leaderboard</span>
+              </div>
+            </div>
+          </div>
         </div>
-        <Button onClick={() => router.push('/dashboard')} variant="outline">
-          Back to Dashboard
-        </Button>
-      </div>
+      </header>
 
-      {/* Tab Navigation */}
-      <div className="flex gap-2 mb-6">
-        {[
-          { key: 'rankings', label: 'Rankings', icon: Trophy },
-          { key: 'achievements', label: 'Achievements', icon: Award }
-        ].map(({ key, label, icon: Icon }) => (
-          <Button
-            key={key}
-            variant={activeTab === key ? 'default' : 'outline'}
-            onClick={() => setActiveTab(key as any)}
-          >
-            <Icon className="w-4 h-4 mr-2" />
-            {label}
-          </Button>
-        ))}
-      </div>
+      <main className="container-default py-8 space-y-8">
+        {/* Tab Navigation */}
+        <div className="flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center animate-fade-in-up">
+          <div className="flex gap-2">
+            <Button
+              variant={activeTab === 'rankings' ? 'default' : 'ghost'}
+              onClick={() => setActiveTab('rankings')}
+            >
+              <Trophy className="w-4 h-4" />
+              Rankings
+            </Button>
+            <Button
+              variant={activeTab === 'achievements' ? 'default' : 'ghost'}
+              onClick={() => setActiveTab('achievements')}
+            >
+              <Award className="w-4 h-4" />
+              Achievements
+            </Button>
+          </div>
 
-      {/* Content */}
-      {activeTab === 'rankings' && renderRankings()}
-      {activeTab === 'achievements' && renderAchievements()}
+          {activeTab === 'rankings' && (
+            <div className="flex gap-2">
+              {[
+                { key: 'all', label: 'All Time' },
+                { key: 'month', label: 'Monthly' },
+                { key: 'week', label: 'Weekly' },
+              ].map(({ key, label }) => (
+                <Button
+                  key={key}
+                  variant={period === key ? 'soft' : 'ghost'}
+                  size="sm"
+                  onClick={() => setPeriod(key as typeof period)}
+                >
+                  {label}
+                </Button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {activeTab === 'rankings' && (
+          <div className="space-y-6">
+            {/* Current User Card */}
+            {currentUser && (
+              <Card variant="highlight" className="animate-fade-in-up stagger-1">
+                <CardContent className="p-6">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-bold text-lg">
+                        {currentUser.name[0]}
+                      </div>
+                      <div>
+                        <h3 className="font-semibold text-lg">{currentUser.name}</h3>
+                        <p className="text-sm text-muted-foreground">
+                          {currentUser.totalWins} wins • {currentUser.winRate}% win rate
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-3xl font-bold text-primary">#{currentUser.rank}</div>
+                      <p className="text-sm text-muted-foreground">{currentUser.totalMatches} matches</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Rankings List */}
+            <Card className="animate-fade-in-up stagger-2">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Users className="w-5 h-5 text-muted-foreground" />
+                  Top Players
+                </CardTitle>
+                <CardDescription>
+                  {period === 'all' ? 'All-time' : period === 'month' ? 'This month' : 'This week'} rankings
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {rankings.length === 0 ? (
+                  <div className="text-center py-12">
+                    <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center mx-auto mb-4">
+                      <Trophy className="w-8 h-8 text-muted-foreground" />
+                    </div>
+                    <h3 className="font-semibold mb-2">No rankings yet</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Start playing to appear on the leaderboard
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {rankings.map((user) => (
+                      <div
+                        key={user.id}
+                        className={`flex items-center justify-between p-4 rounded-xl border transition-colors ${getRankStyle(user.rank)} ${
+                          user.id === session?.user?.id ? 'ring-2 ring-primary/20' : ''
+                        }`}
+                      >
+                        <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 flex items-center justify-center">
+                            {getRankDisplay(user.rank)}
+                          </div>
+                          <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center font-semibold">
+                            {user.name[0]}
+                          </div>
+                          <div>
+                            <h4 className="font-medium">{user.name}</h4>
+                            <p className="text-xs text-muted-foreground">
+                              Joined {new Date(user.joinedAt).toLocaleDateString()}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-semibold">{user.totalWins} wins</p>
+                          <p className="text-xs text-muted-foreground">
+                            {user.winRate}% • {user.totalMatches} games
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {activeTab === 'achievements' && (
+          <div className="space-y-6">
+            {/* Achievement Stats */}
+            <div className="grid sm:grid-cols-3 gap-4 animate-fade-in-up stagger-1">
+              <Card className="p-6 text-center">
+                <Award className="w-8 h-8 text-primary mx-auto mb-3" />
+                <div className="text-2xl font-bold">{achievements.filter(a => a.unlocked).length}</div>
+                <p className="text-sm text-muted-foreground">Unlocked</p>
+              </Card>
+              <Card className="p-6 text-center">
+                <Star className="w-8 h-8 text-amber-500 mx-auto mb-3" />
+                <div className="text-2xl font-bold">{totalPoints}</div>
+                <p className="text-sm text-muted-foreground">Total Points</p>
+              </Card>
+              <Card className="p-6 text-center">
+                <TrendingUp className="w-8 h-8 text-success mx-auto mb-3" />
+                <div className="text-2xl font-bold">
+                  {achievements.length > 0 ? Math.round((achievements.filter(a => a.unlocked).length / achievements.length) * 100) : 0}%
+                </div>
+                <p className="text-sm text-muted-foreground">Completion</p>
+              </Card>
+            </div>
+
+            {/* Achievements Grid */}
+            <Card className="animate-fade-in-up stagger-2">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Award className="w-5 h-5 text-muted-foreground" />
+                  Achievements
+                </CardTitle>
+                <CardDescription>
+                  Complete challenges and earn rewards
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {achievements.length === 0 ? (
+                  <div className="text-center py-12">
+                    <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center mx-auto mb-4">
+                      <Award className="w-8 h-8 text-muted-foreground" />
+                    </div>
+                    <h3 className="font-semibold mb-2">No achievements yet</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Start playing to unlock achievements
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {achievements.map((achievement) => (
+                      <Card
+                        key={achievement.id}
+                        className={`p-4 ${
+                          achievement.unlocked 
+                            ? 'border-success/30 bg-success/5' 
+                            : 'opacity-60'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between mb-3">
+                          <span className="text-2xl">{achievement.icon}</span>
+                          {achievement.unlocked && (
+                            <Badge variant="success" size="sm">Unlocked</Badge>
+                          )}
+                        </div>
+                        <h4 className="font-semibold mb-1">{achievement.title}</h4>
+                        <p className="text-sm text-muted-foreground mb-3">{achievement.description}</p>
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-primary font-medium">{achievement.points} pts</span>
+                          {achievement.unlocked && achievement.unlockedAt && (
+                            <span className="text-muted-foreground">
+                              {new Date(achievement.unlockedAt).toLocaleDateString()}
+                            </span>
+                          )}
+                        </div>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        )}
+      </main>
     </div>
   )
 }

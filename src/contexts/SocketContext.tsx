@@ -2,7 +2,8 @@
 
 import { createContext, useContext, useEffect, useState, useRef } from 'react'
 import { useSession } from 'next-auth/react'
-import { io, type Socket } from 'socket.io-client'
+import { type Socket } from 'socket.io-client'
+import { createSocketConnection, ensureSocketCompatibility } from '@/lib/socketClient'
 
 interface GameState {
   matchId: string
@@ -93,10 +94,11 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   const { data: session } = useSession()
 
   useEffect(() => {
-    const socketInstance = io('http://localhost:3003', {
-      autoConnect: true,
-      transports: ['websocket', 'polling']
-    })
+    // Ensure socket compatibility
+    ensureSocketCompatibility()
+    
+    console.log('Initializing socket connection...')
+    const socketInstance = createSocketConnection()
 
     socketInstance.on('connect', () => {
       console.log('Connected to Socket.IO server')
@@ -271,11 +273,17 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     hintsUsed: number
     errorsCount: number
   }) => {
-    if (socket) {
-      socket.emit('make-move', { row, col, value })
+    if (socket && session?.user?.id && currentMatchIdRef.current) {
+      socket.emit('make-move', { 
+        matchId: currentMatchIdRef.current,
+        userId: session.user.id,
+        row, 
+        col, 
+        value 
+      })
       
       // Also persist to API for game state tracking
-      if (gameStats && currentMatchIdRef.current) {
+      if (gameStats) {
         fetch(`/api/matches/${currentMatchIdRef.current}/move`, {
           method: 'POST',
           headers: {
@@ -299,14 +307,21 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   }
 
   const requestHint = () => {
-    if (socket) {
-      socket.emit('request-hint')
+    if (socket && session?.user?.id && currentMatchIdRef.current) {
+      socket.emit('request-hint', {
+        matchId: currentMatchIdRef.current,
+        userId: session.user.id
+      })
     }
   }
 
   const setReady = (isReady: boolean) => {
-    if (socket) {
-      socket.emit('set-ready', { isReady })
+    if (socket && session?.user?.id && currentMatchIdRef.current) {
+      socket.emit('set-ready', { 
+        matchId: currentMatchIdRef.current,
+        userId: session.user.id,
+        isReady 
+      })
     }
   }
 

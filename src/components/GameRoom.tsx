@@ -61,9 +61,13 @@ export function GameRoom({ matchId }: GameRoomProps) {
 
     // Join the game room
     if (socket && isConnected) {
-      socket.emit('join-game', { matchId, userId: session.user.id })
+      socket.emit('join-game', {
+        matchId,
+        userId: session.user.id,
+        playerName: session.user.name || session.user.email || 'Player'
+      })
     }
-  }, [socket, isConnected, matchId, router, session?.user?.id])
+  }, [socket, isConnected, matchId, router, session?.user?.id, session?.user?.name, session?.user?.email])
 
   // Fetch initial match data to get the puzzle
   useEffect(() => {
@@ -243,6 +247,7 @@ export function GameRoom({ matchId }: GameRoomProps) {
 
   const handleToggleReady = () => {
     const newReadyState = !isPlayerReady
+    console.log('Toggle ready:', { newReadyState, matchId, userId: session?.user?.id })
     setIsPlayerReady(newReadyState)
     setReady(newReadyState)
   }
@@ -350,6 +355,17 @@ export function GameRoom({ matchId }: GameRoomProps) {
   const gameGrid = getGameGrid()
   const isGameActive = gamePhase === 'IN_PROGRESS'
   const canMakeMove = isGameActive && (roomState?.gameState?.gameMode !== 'TURN_BASED' || isMyTurn())
+
+  // Debug logging
+  console.log('GameRoom state:', {
+    gamePhase,
+    isGameActive,
+    canMakeMove,
+    roomState: roomState ? {
+      status: roomState.status,
+      playersCount: roomState.players?.length
+    } : null
+  })
 
   return (
     <div className="container mx-auto p-4 space-y-6">

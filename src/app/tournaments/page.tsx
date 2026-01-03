@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import Link from 'next/link'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { 
@@ -13,7 +14,12 @@ import {
   Wallet,
   Calendar,
   Crown,
-  ArrowRight
+  ArrowRight,
+  Grid3X3,
+  ChevronLeft,
+  Sparkles,
+  Target,
+  Shield,
 } from 'lucide-react'
 import { Tournament } from '@/lib/tournament'
 
@@ -41,8 +47,8 @@ export default function TournamentsPage() {
         const data = await response.json()
         setTournaments(data.tournaments || [])
       } else {
-        // Fallback to mock data
-        const mockTournaments: Tournament[] = [
+        // Mock data fallback
+        setTournaments([
           {
             id: '1',
             name: 'Daily Championship',
@@ -52,7 +58,7 @@ export default function TournamentsPage() {
             currentPlayers: 8,
             status: 'REGISTRATION',
             startTime: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
-            description: 'Daily tournament with exciting prizes for Sudoku masters!',
+            description: 'Daily tournament with exciting prizes!',
             bracketType: 'SINGLE_ELIMINATION',
             currentRound: 0,
             totalRounds: 4,
@@ -68,7 +74,7 @@ export default function TournamentsPage() {
             currentPlayers: 5,
             status: 'REGISTRATION',
             startTime: new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString(),
-            description: 'Perfect for weekend players looking for some competitive action.',
+            description: 'Perfect for weekend players!',
             bracketType: 'SINGLE_ELIMINATION',
             currentRound: 0,
             totalRounds: 3,
@@ -84,31 +90,14 @@ export default function TournamentsPage() {
             currentPlayers: 20,
             status: 'REGISTRATION',
             startTime: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-            description: 'The biggest tournament of the month with massive prizes!',
+            description: 'The biggest tournament of the month!',
             bracketType: 'SINGLE_ELIMINATION',
             currentRound: 0,
             totalRounds: 5,
             players: [],
             matches: []
           },
-          {
-            id: '4',
-            name: 'Speed Challenge',
-            entryFee: 75,
-            prizePool: 3000,
-            maxPlayers: 12,
-            currentPlayers: 12,
-            status: 'IN_PROGRESS',
-            startTime: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
-            description: 'Fast-paced tournament for quick thinkers.',
-            bracketType: 'SINGLE_ELIMINATION',
-            currentRound: 1,
-            totalRounds: 4,
-            players: [],
-            matches: []
-          }
-        ]
-        setTournaments(mockTournaments)
+        ])
       }
     } catch (error) {
       console.error('Error fetching tournaments:', error)
@@ -129,21 +118,16 @@ export default function TournamentsPage() {
     }
   }
 
-  const getStatusColor = (status: Tournament['status']) => {
+  const getStatusBadge = (status: Tournament['status']) => {
     switch (status) {
-      case 'REGISTRATION': return 'bg-blue-500'
-      case 'IN_PROGRESS': return 'bg-green-500'
-      case 'COMPLETED': return 'bg-gray-500'
-      default: return 'bg-gray-500'
-    }
-  }
-
-  const getStatusText = (status: Tournament['status']) => {
-    switch (status) {
-      case 'REGISTRATION': return 'Registration Open'
-      case 'IN_PROGRESS': return 'In Progress'
-      case 'COMPLETED': return 'Completed'
-      default: return 'Unknown'
+      case 'REGISTRATION':
+        return <Badge variant="success">Open</Badge>
+      case 'IN_PROGRESS':
+        return <Badge variant="warning">Live</Badge>
+      case 'COMPLETED':
+        return <Badge variant="muted">Ended</Badge>
+      default:
+        return <Badge variant="muted">Unknown</Badge>
     }
   }
 
@@ -155,12 +139,9 @@ export default function TournamentsPage() {
 
   const handleJoinTournament = async (tournament: Tournament) => {
     if (!canJoinTournament(tournament)) {
-      if (tournament.status !== 'REGISTRATION') {
-        alert('Tournament registration is closed')
-      } else if (tournament.currentPlayers >= tournament.maxPlayers) {
-        alert('Tournament is full')
-      } else if (walletBalance < tournament.entryFee) {
-        alert(`Insufficient balance! You need ₹${tournament.entryFee} to join this tournament.`)
+      if (walletBalance < tournament.entryFee) {
+        alert(`Insufficient balance. You need ₹${tournament.entryFee} to join.`)
+        router.push('/wallet')
       }
       return
     }
@@ -171,7 +152,6 @@ export default function TournamentsPage() {
       })
 
       if (response.ok) {
-        await response.json()
         alert('Successfully joined tournament!')
         fetchWalletBalance()
         fetchTournaments()
@@ -185,227 +165,157 @@ export default function TournamentsPage() {
     }
   }
 
-  const formatTime = (timeString: string) => {
+  const formatTimeUntil = (timeString: string) => {
     const date = new Date(timeString)
     const now = new Date()
     const diffMs = date.getTime() - now.getTime()
     
-    if (diffMs < 0) {
-      return 'Started'
-    }
+    if (diffMs < 0) return 'Started'
     
-    const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
-    const diffMinutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60))
+    const hours = Math.floor(diffMs / (1000 * 60 * 60))
+    const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60))
     
-    if (diffHours > 0) {
-      return `Starts in ${diffHours}h ${diffMinutes}m`
-    } else {
-      return `Starts in ${diffMinutes}m`
-    }
+    if (hours > 24) return `${Math.floor(hours / 24)}d ${hours % 24}h`
+    if (hours > 0) return `${hours}h ${minutes}m`
+    return `${minutes}m`
   }
 
-  if (!session?.user?.id) {
-    return null
-  }
+  if (!session?.user?.id) return null
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-[#1a1a2e] via-[#16213e] to-[#0f3460] flex items-center justify-center">
-        <div className="relative">
-          <div className="absolute inset-0 bg-gradient-to-br from-[#e94560]/10 to-[#0f3460]/10 rounded-xl"></div>
-          <div className="relative bg-[#1a1a2e]/90 backdrop-blur-md border border-[#e94560]/20 rounded-xl shadow-2xl p-8 text-center">
-            <div className="absolute inset-0 bg-gradient-to-br from-[#e94560]/5 to-[#0f3460]/5 rounded-xl"></div>
-            <div className="relative">
-              <div className="relative mb-6">
-                <div className="absolute inset-0 bg-gradient-to-r from-[#e94560] to-[#f9ed69] rounded-full blur-lg opacity-50"></div>
-                <div className="relative animate-spin rounded-full h-12 w-12 border-2 border-transparent bg-gradient-to-r from-[#e94560] to-[#f9ed69] p-1 mx-auto">
-                  <div className="bg-[#1a1a2e] rounded-full h-full w-full"></div>
-                </div>
-              </div>
-              <h3 className="text-lg font-semibold mb-2 text-white">Loading Cosmic Tournaments...</h3>
-              <p className="text-white/70">Scanning the arena for stellar competitions.</p>
-            </div>
-          </div>
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <div className="w-12 h-12 rounded-full border-2 border-muted border-t-primary animate-spin mx-auto" />
+          <p className="text-muted-foreground">Loading tournaments...</p>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#1a1a2e] via-[#16213e] to-[#0f3460] relative overflow-hidden">
-      {/* Cosmic Background Elements */}
-      <div className="absolute inset-0 overflow-hidden">
-        <div className="absolute top-20 left-10 w-80 h-80 bg-gradient-to-r from-[#e94560]/20 to-[#f9ed69]/15 rounded-full mix-blend-multiply filter blur-3xl opacity-60 animate-pulse"></div>
-        <div className="absolute top-40 right-10 w-96 h-96 bg-gradient-to-l from-[#0f3460]/40 to-[#e94560]/25 rounded-full mix-blend-multiply filter blur-3xl opacity-50 animate-pulse" style={{animationDelay: '2s'}}></div>
-        <div className="absolute -bottom-32 left-1/2 transform -translate-x-1/2 w-[500px] h-[500px] bg-gradient-to-t from-[#f9ed69]/20 to-[#16213e]/30 rounded-full mix-blend-multiply filter blur-3xl opacity-40 animate-pulse" style={{animationDelay: '4s'}}></div>
-        
-        {/* Floating star particles */}
-        <div className="absolute top-1/4 left-1/4 w-2 h-2 bg-[#f9ed69] rounded-full animate-ping opacity-70"></div>
-        <div className="absolute top-1/3 right-1/3 w-1 h-1 bg-[#e94560] rounded-full animate-ping opacity-80" style={{animationDelay: '1s'}}></div>
-        <div className="absolute bottom-1/4 left-1/3 w-1.5 h-1.5 bg-[#0f3460] rounded-full animate-ping opacity-60" style={{animationDelay: '3s'}}></div>
-      </div>
-
-      <div className="relative z-10 container mx-auto p-4 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-8">
-        <div className="flex items-center space-x-4">
-          <div className="relative">
-            <div className="absolute inset-0 bg-gradient-to-r from-yellow-500 to-orange-500 rounded-full blur-lg opacity-50"></div>
-            <Crown className="relative h-10 w-10 text-white" />
-          </div>
-          <div>
-            <h1 className="text-4xl font-bold text-white">Cosmic Tournaments</h1>
-            <p className="text-gray-300 text-sm">Compete for stellar prizes in the ultimate arena</p>
-          </div>
-        </div>
-        <div className="flex items-center space-x-4">
-          <div className="relative">
-            <div className="absolute inset-0 bg-gradient-to-r from-green-500/20 to-blue-500/20 rounded-xl"></div>
-            <div className="relative bg-gray-900/40 backdrop-blur-sm border border-green-500/30 rounded-xl px-6 py-3">
-              <div className="flex items-center space-x-3">
-                <div className="relative">
-                  <div className="absolute inset-0 bg-gradient-to-r from-green-500 to-blue-500 rounded-full blur-lg opacity-50"></div>
-                  <Wallet className="relative h-5 w-5 text-white" />
+    <div className="min-h-screen bg-background">
+      {/* Navigation */}
+      <header className="nav-header">
+        <div className="container-default">
+          <div className="flex h-16 items-center justify-between">
+            <div className="flex items-center gap-4">
+              <Link href="/dashboard">
+                <Button variant="ghost" size="icon-sm">
+                  <ChevronLeft className="w-5 h-5" />
+                </Button>
+              </Link>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-primary text-primary-foreground">
+                  <Trophy className="w-5 h-5" />
                 </div>
-                <span className="font-bold text-xl text-white">₹{walletBalance.toFixed(2)}</span>
+                <span className="text-lg font-semibold">Tournaments</span>
               </div>
             </div>
-          </div>
-          <button 
-            onClick={() => router.push('/dashboard')}
-            className="group relative px-6 py-3 bg-gradient-to-r from-purple-600/20 to-blue-600/20 border border-purple-500/30 rounded-xl text-white font-medium transition-all duration-300 hover:from-purple-500/30 hover:to-blue-500/30 hover:border-purple-400/50 hover:shadow-lg hover:scale-105"
-          >
-            <div className="absolute inset-0 bg-gradient-to-r from-purple-500 to-blue-500 rounded-xl opacity-0 group-hover:opacity-20 transition-opacity duration-300"></div>
-            <span className="relative">Back to Dashboard</span>
-          </button>
-        </div>
-      </div>
 
-      {/* Tournament Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {tournaments.map((tournament) => (
-          <div key={tournament.id} className="relative overflow-hidden group hover:shadow-2xl transition-all duration-500 border-2 border-[#e94560]/30 hover:border-[#e94560]/60 bg-gradient-to-br from-[#1a1a2e]/90 to-[#16213e]/90 backdrop-blur-md transform hover:scale-105 cursor-pointer rounded-xl">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-[#e94560]/30 to-[#f9ed69]/20 rounded-bl-full opacity-60"></div>
-            <div className={`absolute -top-2 -right-2 w-4 h-4 rounded-full animate-ping ${
-              tournament.status === 'REGISTRATION' 
-                ? 'bg-[#f9ed69]' 
-                : tournament.status === 'IN_PROGRESS'
-                ? 'bg-[#e94560]'
-                : 'bg-gray-400'
-            }`}></div>
+            <Link href="/wallet">
+              <Button variant="ghost" size="sm" className="gap-2">
+                <Wallet className="w-4 h-4" />
+                <span className="font-semibold">₹{walletBalance.toFixed(0)}</span>
+              </Button>
+            </Link>
+          </div>
+        </div>
+      </header>
+
+      <main className="container-default py-8 space-y-8">
+        {/* Header */}
+        <div className="text-center max-w-2xl mx-auto animate-fade-in-up">
+          <Badge variant="default" size="lg" className="mb-4">
+            <Sparkles className="w-3.5 h-3.5" />
+            Premium Competition
+          </Badge>
+          <h1 className="text-heading text-3xl sm:text-4xl mb-4">
+            Compete for Real Prizes
+          </h1>
+          <p className="text-foreground-secondary text-lg">
+            Join bracket tournaments and win cash prizes. Entry fees build the prize pool.
+          </p>
+        </div>
+
+        {/* Tournament Grid */}
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 animate-fade-in-up stagger-1">
+          {tournaments.map((tournament) => {
+            const progress = (tournament.currentPlayers / tournament.maxPlayers) * 100
             
-            {/* Header */}
-            <div className="relative z-10 p-6 border-b border-[#e94560]/20">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-xl font-bold text-white">{tournament.name}</h3>
-                <div className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                  tournament.status === 'REGISTRATION' 
-                    ? 'bg-gradient-to-r from-[#f9ed69]/20 to-[#e94560]/20 border border-[#f9ed69]/30 text-[#f9ed69]' 
-                    : tournament.status === 'IN_PROGRESS'
-                    ? 'bg-gradient-to-r from-[#e94560]/20 to-[#f9ed69]/20 border border-[#e94560]/30 text-[#e94560]'
-                    : 'bg-gradient-to-r from-gray-500/20 to-gray-600/20 border border-gray-500/30 text-gray-400'
-                }`}>
-                  {getStatusText(tournament.status)}
-                </div>
-              </div>
-              <p className="text-white/70 text-sm">{tournament.description}</p>
-            </div>
+            return (
+              <Card key={tournament.id} variant="interactive" className="overflow-hidden">
+                <CardHeader className="pb-4">
+                  <div className="flex items-start justify-between mb-2">
+                    <CardTitle className="text-xl">{tournament.name}</CardTitle>
+                    {getStatusBadge(tournament.status)}
+                  </div>
+                  <p className="text-sm text-muted-foreground">{tournament.description}</p>
+                </CardHeader>
 
-            {/* Content */}
-            <div className="relative z-10 p-6 space-y-6">
-              {/* Tournament Stats */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="flex items-center space-x-3 p-3 bg-gradient-to-r from-[#f9ed69]/10 to-[#e94560]/10 border border-[#f9ed69]/20 rounded-lg">
-                  <div className="w-8 h-8 bg-gradient-to-br from-[#f9ed69] to-[#e94560] rounded-lg flex items-center justify-center">
-                    <Trophy className="h-4 w-4 text-[#1a1a2e]" />
+                <CardContent className="space-y-6">
+                  {/* Stats Grid */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="p-3 rounded-xl bg-muted/50">
+                      <Trophy className="w-4 h-4 text-primary mb-2" />
+                      <p className="text-xs text-muted-foreground">Prize Pool</p>
+                      <p className="font-semibold">₹{tournament.prizePool.toLocaleString()}</p>
+                    </div>
+                    <div className="p-3 rounded-xl bg-muted/50">
+                      <Wallet className="w-4 h-4 text-primary mb-2" />
+                      <p className="text-xs text-muted-foreground">Entry Fee</p>
+                      <p className="font-semibold">₹{tournament.entryFee}</p>
+                    </div>
+                    <div className="p-3 rounded-xl bg-muted/50">
+                      <Users className="w-4 h-4 text-accent mb-2" />
+                      <p className="text-xs text-muted-foreground">Players</p>
+                      <p className="font-semibold">{tournament.currentPlayers}/{tournament.maxPlayers}</p>
+                    </div>
+                    <div className="p-3 rounded-xl bg-muted/50">
+                      <Clock className="w-4 h-4 text-accent mb-2" />
+                      <p className="text-xs text-muted-foreground">Starts In</p>
+                      <p className="font-semibold">{formatTimeUntil(tournament.startTime)}</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-xs text-white/60">Prize Pool</p>
-                    <p className="text-[#f9ed69] font-bold">₹{tournament.prizePool.toLocaleString()}</p>
-                  </div>
-                </div>
-                <div className="flex items-center space-x-3 p-3 bg-gradient-to-r from-[#0f3460]/10 to-[#e94560]/10 border border-[#0f3460]/20 rounded-lg">
-                  <div className="w-8 h-8 bg-gradient-to-br from-[#0f3460] to-[#e94560] rounded-lg flex items-center justify-center">
-                    <Wallet className="h-4 w-4 text-white" />
-                  </div>
-                  <div>
-                    <p className="text-xs text-white/60">Entry Fee</p>
-                    <p className="text-[#f9ed69] font-bold">₹{tournament.entryFee}</p>
-                  </div>
-                </div>
-                <div className="flex items-center space-x-3 p-3 bg-gradient-to-r from-[#e94560]/10 to-[#f9ed69]/10 border border-[#e94560]/20 rounded-lg">
-                  <div className="w-8 h-8 bg-gradient-to-br from-[#e94560] to-[#f9ed69] rounded-lg flex items-center justify-center">
-                    <Users className="h-4 w-4 text-[#1a1a2e]" />
-                  </div>
-                  <div>
-                    <p className="text-xs text-white/60">Players</p>
-                    <p className="text-[#f9ed69] font-bold">{tournament.currentPlayers}/{tournament.maxPlayers}</p>
-                  </div>
-                </div>
-                <div className="flex items-center space-x-3 p-3 bg-gradient-to-r from-[#f9ed69]/10 to-[#0f3460]/10 border border-[#f9ed69]/20 rounded-lg">
-                  <div className="w-8 h-8 bg-gradient-to-br from-[#f9ed69] to-[#0f3460] rounded-lg flex items-center justify-center">
-                    <Clock className="h-4 w-4 text-[#1a1a2e]" />
-                  </div>
-                  <div>
-                    <p className="text-xs text-white/60">Status</p>
-                    <p className="text-[#f9ed69] font-bold text-xs">{formatTime(tournament.startTime)}</p>
-                  </div>
-                </div>
-              </div>
 
-              {/* Progress Bar */}
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm text-white/70">
-                  <span>Registration Progress</span>
-                  <span>{Math.round((tournament.currentPlayers / tournament.maxPlayers) * 100)}%</span>
-                </div>
-                <div className="w-full bg-[#1a1a2e]/50 rounded-full h-3 overflow-hidden border border-[#e94560]/20">
-                  <div 
-                    className="h-full bg-gradient-to-r from-[#e94560] to-[#f9ed69] rounded-full transition-all duration-500 shadow-lg"
-                    style={{ 
-                      width: `${(tournament.currentPlayers / tournament.maxPlayers) * 100}%` 
-                    }}
-                  ></div>
-                </div>
-              </div>
-
-              {/* Action Button */}
-              <button 
-                onClick={() => handleJoinTournament(tournament)}
-                disabled={!canJoinTournament(tournament)}
-                className={`w-full py-3 px-6 rounded-xl font-semibold transition-all duration-300 transform hover:scale-105 shadow-lg disabled:transform-none disabled:cursor-not-allowed ${
-                  tournament.status === 'COMPLETED' || tournament.currentPlayers >= tournament.maxPlayers || walletBalance < tournament.entryFee
-                    ? 'bg-gradient-to-r from-gray-600 to-gray-700 text-gray-300 cursor-not-allowed'
-                    : tournament.status === 'IN_PROGRESS'
-                    ? 'bg-gradient-to-r from-[#0f3460] to-[#e94560] hover:from-[#0a2850] hover:to-[#d63847] text-white'
-                    : 'bg-gradient-to-r from-[#e94560] to-[#f9ed69] hover:from-[#d63847] hover:to-[#f7e742] text-[#1a1a2e]'
-                }`}
-              >
-                {tournament.status === 'COMPLETED' ? (
-                  'Tournament Ended'
-                ) : tournament.currentPlayers >= tournament.maxPlayers ? (
-                  'Tournament Full'
-                ) : walletBalance < tournament.entryFee ? (
-                  `Need ₹${tournament.entryFee - walletBalance} more`
-                ) : tournament.status === 'IN_PROGRESS' ? (
-                  <div className="flex items-center justify-center space-x-2">
-                    <span>View Bracket</span>
-                    <ArrowRight className="h-4 w-4" />
+                  {/* Progress Bar */}
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Registration</span>
+                      <span className="font-medium">{Math.round(progress)}%</span>
+                    </div>
+                    <div className="h-2 bg-muted rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-primary rounded-full transition-all duration-500"
+                        style={{ width: `${progress}%` }}
+                      />
+                    </div>
                   </div>
-                ) : (
-                  <div className="flex items-center justify-center space-x-2">
-                    <span>Join Tournament</span>
-                    <ArrowRight className="h-4 w-4" />
-                  </div>
-                )}
-              </button>
 
-              {/* Additional Info */}
-              {tournament.status === 'REGISTRATION' && (
-                <div className="text-center p-3 bg-gradient-to-r from-[#0f3460]/10 to-[#e94560]/10 border border-[#0f3460]/20 rounded-lg">
-                  <div className="flex items-center justify-center space-x-2 text-sm text-white/70">
-                    <Calendar className="h-4 w-4 text-[#0f3460]" />
-                    <span>
+                  {/* Action Button */}
+                  <Button
+                    onClick={() => handleJoinTournament(tournament)}
+                    disabled={!canJoinTournament(tournament)}
+                    variant={tournament.status === 'REGISTRATION' ? 'premium' : 'outline'}
+                    className="w-full"
+                  >
+                    {tournament.status === 'COMPLETED' ? (
+                      'Ended'
+                    ) : tournament.currentPlayers >= tournament.maxPlayers ? (
+                      'Full'
+                    ) : walletBalance < tournament.entryFee ? (
+                      `Need ₹${tournament.entryFee - walletBalance} more`
+                    ) : tournament.status === 'IN_PROGRESS' ? (
+                      <>View Bracket<ArrowRight className="w-4 h-4" /></>
+                    ) : (
+                      <>Join Tournament<ArrowRight className="w-4 h-4" /></>
+                    )}
+                  </Button>
+
+                  {/* Start Time */}
+                  {tournament.status === 'REGISTRATION' && (
+                    <p className="text-center text-xs text-muted-foreground flex items-center justify-center gap-2">
+                      <Calendar className="w-3.5 h-3.5" />
                       {new Date(tournament.startTime).toLocaleDateString('en-IN', {
                         weekday: 'short',
                         month: 'short',
@@ -413,80 +323,67 @@ export default function TournamentsPage() {
                         hour: '2-digit',
                         minute: '2-digit'
                       })}
-                    </span>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            )
+          })}
+        </div>
 
-      {/* Tournament Rules */}
-      <div className="relative overflow-hidden border-2 border-[#f9ed69]/30 bg-gradient-to-br from-[#1a1a2e]/90 to-[#16213e]/90 backdrop-blur-md rounded-xl">
-        <div className="absolute top-0 right-0 w-40 h-40 bg-gradient-to-br from-[#f9ed69]/10 to-[#e94560]/5 rounded-bl-full"></div>
-        <div className="relative z-10 border-b border-[#f9ed69]/20 p-6">
-          <h3 className="text-2xl font-bold text-white flex items-center space-x-3">
-            <div className="w-8 h-8 bg-gradient-to-br from-[#f9ed69] to-[#e94560] rounded-lg flex items-center justify-center">
-              <Trophy className="h-5 w-5 text-[#1a1a2e]" />
-            </div>
-            <span>Cosmic Tournament Rules</span>
-          </h3>
-        </div>
-        <div className="relative z-10 p-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <div className="space-y-4">
-              <h4 className="font-semibold text-lg text-white flex items-center space-x-2">
-                <div className="w-3 h-3 bg-gradient-to-r from-[#e94560] to-[#f9ed69] rounded-full"></div>
-                <span>How Tournaments Work</span>
-              </h4>
-              <div className="space-y-3">
-                <div className="flex items-start space-x-3 p-3 bg-gradient-to-r from-[#e94560]/10 to-[#f9ed69]/10 border border-[#e94560]/20 rounded-lg">
-                  <div className="w-2 h-2 bg-gradient-to-r from-[#e94560] to-[#f9ed69] rounded-full mt-2 flex-shrink-0"></div>
-                  <span className="text-white/70 text-sm">Single elimination bracket format for ultimate competition</span>
-                </div>
-                <div className="flex items-start space-x-3 p-3 bg-gradient-to-r from-[#e94560]/10 to-[#f9ed69]/10 border border-[#e94560]/20 rounded-lg">
-                  <div className="w-2 h-2 bg-gradient-to-r from-[#e94560] to-[#f9ed69] rounded-full mt-2 flex-shrink-0"></div>
-                  <span className="text-white/70 text-sm">Each cosmic round has a 30-minute time limit</span>
-                </div>
-                <div className="flex items-start space-x-3 p-3 bg-gradient-to-r from-[#e94560]/10 to-[#f9ed69]/10 border border-[#e94560]/20 rounded-lg">
-                  <div className="w-2 h-2 bg-gradient-to-r from-[#e94560] to-[#f9ed69] rounded-full mt-2 flex-shrink-0"></div>
-                  <span className="text-white/70 text-sm">First to complete the stellar puzzle wins the round</span>
-                </div>
-                <div className="flex items-start space-x-3 p-3 bg-gradient-to-r from-[#e94560]/10 to-[#f9ed69]/10 border border-[#e94560]/20 rounded-lg">
-                  <div className="w-2 h-2 bg-gradient-to-r from-[#e94560] to-[#f9ed69] rounded-full mt-2 flex-shrink-0"></div>
-                  <span className="text-white/70 text-sm">Champion takes 70% of prize pool, runner-up claims 30%</span>
-                </div>
+        {/* Rules Section */}
+        <Card className="animate-fade-in-up stagger-2">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Shield className="w-5 h-5 text-muted-foreground" />
+              Tournament Rules
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid md:grid-cols-2 gap-8">
+              <div className="space-y-4">
+                <h4 className="font-semibold flex items-center gap-2">
+                  <Target className="w-4 h-4 text-primary" />
+                  How It Works
+                </h4>
+                <ul className="space-y-3">
+                  {[
+                    'Single elimination bracket format',
+                    'Each round has a 30-minute time limit',
+                    'First to complete the puzzle wins',
+                    'Winner takes 70%, runner-up gets 30%',
+                  ].map((rule, i) => (
+                    <li key={i} className="flex items-start gap-3 text-sm text-foreground-secondary">
+                      <div className="w-1.5 h-1.5 rounded-full bg-primary mt-2" />
+                      {rule}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="space-y-4">
+                <h4 className="font-semibold flex items-center gap-2">
+                  <Shield className="w-4 h-4 text-accent" />
+                  Entry Requirements
+                </h4>
+                <ul className="space-y-3">
+                  {[
+                    'Sufficient wallet balance for entry fee',
+                    'Tournament must be in registration phase',
+                    'Verified account required',
+                    'Fair play policy applies',
+                  ].map((rule, i) => (
+                    <li key={i} className="flex items-start gap-3 text-sm text-foreground-secondary">
+                      <div className="w-1.5 h-1.5 rounded-full bg-accent mt-2" />
+                      {rule}
+                    </li>
+                  ))}
+                </ul>
               </div>
             </div>
-            <div className="space-y-4">
-              <h4 className="font-semibold text-lg text-white flex items-center space-x-2">
-                <div className="w-3 h-3 bg-gradient-to-r from-[#0f3460] to-[#e94560] rounded-full"></div>
-                <span>Entry Requirements</span>
-              </h4>
-              <div className="space-y-3">
-                <div className="flex items-start space-x-3 p-3 bg-gradient-to-r from-[#0f3460]/10 to-[#e94560]/10 border border-[#0f3460]/20 rounded-lg">
-                  <div className="w-2 h-2 bg-gradient-to-r from-[#0f3460] to-[#e94560] rounded-full mt-2 flex-shrink-0"></div>
-                  <span className="text-white/70 text-sm">Sufficient cosmic credits (wallet balance) for entry fee</span>
-                </div>
-                <div className="flex items-start space-x-3 p-3 bg-gradient-to-r from-[#0f3460]/10 to-[#e94560]/10 border border-[#0f3460]/20 rounded-lg">
-                  <div className="w-2 h-2 bg-gradient-to-r from-[#0f3460] to-[#e94560] rounded-full mt-2 flex-shrink-0"></div>
-                  <span className="text-white/70 text-sm">Tournament must be in open registration phase</span>
-                </div>
-                <div className="flex items-start space-x-3 p-3 bg-gradient-to-r from-[#0f3460]/10 to-[#e94560]/10 border border-[#0f3460]/20 rounded-lg">
-                  <div className="w-2 h-2 bg-gradient-to-r from-[#0f3460] to-[#e94560] rounded-full mt-2 flex-shrink-0"></div>
-                  <span className="text-white/70 text-sm">Verified cosmic warrior account required</span>
-                </div>
-                <div className="flex items-start space-x-3 p-3 bg-gradient-to-r from-[#0f3460]/10 to-[#e94560]/10 border border-[#0f3460]/20 rounded-lg">
-                  <div className="w-2 h-2 bg-gradient-to-r from-[#0f3460] to-[#e94560] rounded-full mt-2 flex-shrink-0"></div>
-                  <span className="text-white/70 text-sm">Fair play policy and honor code applies</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-      </div>
+          </CardContent>
+        </Card>
+      </main>
     </div>
   )
 }

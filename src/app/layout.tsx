@@ -1,26 +1,42 @@
-import type { Metadata } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
+import type { Metadata, Viewport } from "next";
+import { Outfit, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { AppProvider } from "@/contexts/AppContext";
 import { AuthProvider } from "@/components/auth/AuthProvider";
 import { SocketProvider } from "@/contexts/SocketContext";
 
-const inter = Inter({
-  variable: "--font-geist-sans",
+const outfit = Outfit({
+  variable: "--font-sans",
   subsets: ["latin"],
+  display: "swap",
 });
 
 const jetbrainsMono = JetBrains_Mono({
-  variable: "--font-geist-mono",
+  variable: "--font-mono",
   subsets: ["latin"],
+  display: "swap",
 });
 
 export const metadata: Metadata = {
-  title: "Sudoku Arena - Multiplayer Sudoku Platform",
-  description: "Play Sudoku against AI or compete with other players in real-time matches. Win prizes in paid competitions!",
-  keywords: ["sudoku", "puzzle", "multiplayer", "competition", "online game"],
-  authors: [{ name: "Sudoku Arena Team" }],
-  viewport: "width=device-width, initial-scale=1",
+  title: "Sudoku Arena — Competitive Puzzle Gaming",
+  description: "Master the art of Sudoku. Compete against players worldwide, challenge AI opponents, and win in professional tournaments.",
+  keywords: ["sudoku", "puzzle game", "competitive gaming", "multiplayer", "tournaments", "brain training"],
+  authors: [{ name: "Sudoku Arena" }],
+  creator: "Sudoku Arena",
+  openGraph: {
+    title: "Sudoku Arena — Competitive Puzzle Gaming",
+    description: "Master the art of Sudoku. Compete against players worldwide.",
+    type: "website",
+  },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#FCFCFC" },
+    { media: "(prefers-color-scheme: dark)", color: "#0F1419" },
+  ],
 };
 
 export default function RootLayout({
@@ -29,9 +45,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="h-full">
+    <html lang="en" className="h-full dark">
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+      </head>
       <body
-        className={`${inter.variable} ${jetbrainsMono.variable} min-h-full bg-background text-foreground antialiased`}
+        className={`${outfit.variable} ${jetbrainsMono.variable} font-sans min-h-full bg-background text-foreground antialiased`}
       >
         <AuthProvider>
           <AppProvider>

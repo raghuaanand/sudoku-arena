@@ -4,6 +4,8 @@ import React, { useState, useCallback, useEffect } from 'react'
 import { cn } from '@/lib/utils'
 import { SudokuCellProps, SudokuGridProps } from '@/types'
 import { isValidMove, isComplete } from '@/utils/sudoku'
+import { Button } from '@/components/ui/button'
+import { Delete, Check } from 'lucide-react'
 
 // Individual Sudoku Cell Component
 const SudokuCellComponent: React.FC<SudokuCellProps> = ({
@@ -32,53 +34,58 @@ const SudokuCellComponent: React.FC<SudokuCellProps> = ({
         const num = parseInt(key, 10)
         onChange(row, col, num)
       } else if (key === 'Backspace' || key === 'Delete' || key === '0') {
-        onChange(row, col, 0) // 0 represents clearing the cell
+        onChange(row, col, 0)
       }
     },
     [row, col, isReadonly, onChange]
   )
 
-  // Determine cell styling based on position and state
-  const getCellClasses = () => {
-    const baseClasses = [
-      'w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 lg:w-14 lg:h-14',
-      'border border-gray-300 dark:border-gray-600',
-      'flex items-center justify-center',
-      'text-sm sm:text-base md:text-lg lg:text-xl font-medium',
-      'transition-all duration-150',
-      'cursor-pointer',
-      'focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50',
-    ]
-
-    // Thick borders for 3x3 box separation
-    if (row % 3 === 0) baseClasses.push('border-t-2 border-t-gray-800 dark:border-t-gray-300')
-    if (col % 3 === 0) baseClasses.push('border-l-2 border-l-gray-800 dark:border-l-gray-300')
-    if (row === 8) baseClasses.push('border-b-2 border-b-gray-800 dark:border-b-gray-300')
-    if (col === 8) baseClasses.push('border-r-2 border-r-gray-800 dark:border-r-gray-300')
-
-    // State-based styling
-    if (isSelected) {
-      baseClasses.push('bg-blue-200 dark:bg-blue-800 ring-2 ring-blue-500')
-    } else if (isHighlighted) {
-      baseClasses.push('bg-blue-100 dark:bg-blue-900')
-    } else if (isError) {
-      baseClasses.push('bg-red-100 dark:bg-red-900 text-red-600 dark:text-red-400')
-    } else if (isReadonly && value !== null) {
-      baseClasses.push('bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100 font-bold')
-    } else {
-      baseClasses.push('bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800')
-    }
-
-    if (isReadonly) {
-      baseClasses.push('cursor-default')
-    }
-
-    return baseClasses.join(' ')
-  }
+  // Calculate box boundaries for styling
+  const isRightBorder = col === 2 || col === 5
+  const isBottomBorder = row === 2 || row === 5
+  const isTopRow = row === 0
+  const isLeftCol = col === 0
+  const isBottomRow = row === 8
+  const isRightCol = col === 8
 
   return (
     <div
-      className={getCellClasses()}
+      className={cn(
+        // Base styles
+        'aspect-square flex items-center justify-center',
+        'text-base sm:text-lg md:text-xl font-semibold',
+        'transition-all duration-150 select-none',
+        'focus:outline-none focus:ring-2 focus:ring-primary focus:ring-inset',
+        'border-r border-b border-border',
+        
+        // Box borders (thicker at 3x3 boundaries)
+        isRightBorder && 'border-r-2 border-r-foreground/20',
+        isBottomBorder && 'border-b-2 border-b-foreground/20',
+        isTopRow && 'border-t-0',
+        isLeftCol && 'border-l-0',
+        
+        // Corner rounding
+        row === 0 && col === 0 && 'rounded-tl-xl',
+        row === 0 && col === 8 && 'rounded-tr-xl border-r-0',
+        row === 8 && col === 0 && 'rounded-bl-xl border-b-0',
+        row === 8 && col === 8 && 'rounded-br-xl border-r-0 border-b-0',
+        isBottomRow && 'border-b-0',
+        isRightCol && 'border-r-0',
+        
+        // State-based styling
+        isSelected
+          ? 'bg-primary/15 text-primary ring-2 ring-primary ring-inset'
+          : isHighlighted
+          ? 'bg-primary/5'
+          : isError
+          ? 'bg-destructive/10 text-destructive'
+          : isReadonly && value !== null
+          ? 'bg-muted/50 text-foreground font-bold'
+          : 'bg-card hover:bg-muted/30',
+        
+        // Cursor
+        isReadonly ? 'cursor-default' : 'cursor-pointer'
+      )}
       onClick={handleClick}
       onKeyDown={handleKeyDown}
       tabIndex={isReadonly ? -1 : 0}
@@ -134,6 +141,12 @@ export const SudokuGridComponent: React.FC<SudokuGridProps> = ({
     [grid, isReadonly, onGridChange]
   )
 
+  const handleNumberInput = useCallback((num: number) => {
+    if (selectedCell && !isReadonly) {
+      handleCellChange(selectedCell.row, selectedCell.col, num)
+    }
+  }, [selectedCell, isReadonly, handleCellChange])
+
   // Keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -168,11 +181,18 @@ export const SudokuGridComponent: React.FC<SudokuGridProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [selectedCell, isReadonly])
 
+  const isCompleted = isComplete(grid)
+
   return (
-    <div className={cn('flex flex-col items-center gap-4', className)}>
+    <div className={cn('flex flex-col items-center gap-6', className)}>
       {/* Grid */}
       <div
-        className="grid grid-cols-9 gap-0 border-2 border-gray-800 dark:border-gray-300 bg-white dark:bg-gray-900 rounded-lg overflow-hidden"
+        className="grid grid-cols-9 border-2 border-foreground/20 rounded-xl overflow-hidden shadow-lg bg-card"
+        style={{ 
+          width: '100%',
+          maxWidth: '400px',
+          aspectRatio: '1 / 1'
+        }}
         role="grid"
         aria-label="Sudoku puzzle"
       >
@@ -180,7 +200,7 @@ export const SudokuGridComponent: React.FC<SudokuGridProps> = ({
           row.map((cell, colIndex) => {
             const cellKey = `${rowIndex}-${colIndex}`
             const isSelected = selectedCell?.row === rowIndex && selectedCell?.col === colIndex
-            const isHighlighted = highlightedNumber !== null && cell === highlightedNumber
+            const isHighlighted = highlightedNumber !== null && cell === highlightedNumber && !isSelected
             const isError = errors.has(cellKey)
             const cellIsReadonly = isReadonly || (solution && solution[rowIndex][colIndex] !== null) || false
 
@@ -202,48 +222,62 @@ export const SudokuGridComponent: React.FC<SudokuGridProps> = ({
         )}
       </div>
 
-      {/* Number Input Buttons for Mobile */}
-      <div className="grid grid-cols-5 gap-2 sm:hidden w-full max-w-xs">
-        {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((num) => (
-          <button
-            key={num}
-            className="h-10 bg-blue-500 hover:bg-blue-600 text-white rounded-md text-lg font-medium transition-colors"
-            onClick={() => {
-              if (selectedCell && !isReadonly) {
-                handleCellChange(selectedCell.row, selectedCell.col, num)
-              }
-            }}
-            disabled={!selectedCell || isReadonly}
-          >
-            {num}
-          </button>
-        ))}
-        <button
-          className="h-10 bg-red-500 hover:bg-red-600 text-white rounded-md text-lg font-medium transition-colors col-span-1"
-          onClick={() => {
-            if (selectedCell && !isReadonly) {
-              handleCellChange(selectedCell.row, selectedCell.col, 0)
-            }
-          }}
-          disabled={!selectedCell || isReadonly}
-        >
-          ×
-        </button>
-      </div>
+      {/* Number Input Buttons (Mobile) */}
+      {!isReadonly && (
+        <div className="w-full max-w-[400px] space-y-3">
+          <div className="grid grid-cols-5 gap-2">
+            {[1, 2, 3, 4, 5].map((num) => (
+              <Button
+                key={num}
+                variant={highlightedNumber === num ? 'default' : 'outline'}
+                size="lg"
+                className="h-12 text-lg font-semibold"
+                onClick={() => handleNumberInput(num)}
+                disabled={!selectedCell}
+              >
+                {num}
+              </Button>
+            ))}
+          </div>
+          <div className="grid grid-cols-5 gap-2">
+            {[6, 7, 8, 9].map((num) => (
+              <Button
+                key={num}
+                variant={highlightedNumber === num ? 'default' : 'outline'}
+                size="lg"
+                className="h-12 text-lg font-semibold"
+                onClick={() => handleNumberInput(num)}
+                disabled={!selectedCell}
+              >
+                {num}
+              </Button>
+            ))}
+            <Button
+              variant="destructive"
+              size="lg"
+              className="h-12"
+              onClick={() => handleNumberInput(0)}
+              disabled={!selectedCell}
+            >
+              <Delete className="w-5 h-5" />
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Game Status */}
-      <div className="text-center space-y-2">
-        {isComplete(grid) && (
-          <div className="text-green-600 dark:text-green-400 font-bold text-lg">
-             Puzzle Completed!
-          </div>
-        )}
-        {errors.size > 0 && (
-          <div className="text-red-600 dark:text-red-400 text-sm">
-            Invalid move detected
-          </div>
-        )}
-      </div>
+      {isCompleted && (
+        <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-success/10 text-success">
+          <Check className="w-5 h-5" />
+          <span className="font-semibold">Puzzle Completed!</span>
+        </div>
+      )}
+      
+      {errors.size > 0 && (
+        <div className="text-destructive text-sm font-medium">
+          Invalid move detected
+        </div>
+      )}
     </div>
   )
 }
