@@ -1,5 +1,6 @@
 // Game scoring and completion logic
 import { prisma } from '@/lib/prisma'
+import { TransactionStatus } from '@prisma/client'
 import { MatchStatus } from '@/types'
 
 export interface GameScore {
@@ -164,11 +165,23 @@ export class GameScoringService {
 
   private static async distributePrize(winnerId: string, prizeAmount: number) {
     try {
+      // Get current wallet balance
+      const wallet = await prisma.wallet.findUnique({
+        where: { userId: winnerId }
+      })
+
+      const balanceBefore = wallet?.balance || 0
+      const balanceAfter = balanceBefore + prizeAmount
+
       // Add prize to winner's wallet
-      await prisma.user.update({
-        where: { id: winnerId },
-        data: {
-          walletBalance: {
+      await prisma.wallet.upsert({
+        where: { userId: winnerId },
+        create: {
+          userId: winnerId,
+          balance: prizeAmount
+        },
+        update: {
+          balance: {
             increment: prizeAmount
           }
         }
@@ -181,7 +194,9 @@ export class GameScoringService {
           amount: prizeAmount,
           type: 'MATCH_WIN',
           description: `Prize for winning multiplayer match`,
-          status: 'completed'
+          status: TransactionStatus.COMPLETED,
+          balanceBefore,
+          balanceAfter
         }
       })
     } catch (error) {

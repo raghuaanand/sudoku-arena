@@ -71,7 +71,7 @@ export async function GET() {
       prisma.transaction.aggregate({
         where: { 
           status: 'COMPLETED',
-          type: { in: ['ADD_FUNDS', 'ENTRY_FEE'] }
+          type: { in: ['DEPOSIT', 'ENTRY_FEE'] }
         },
         _sum: { amount: true }
       }),

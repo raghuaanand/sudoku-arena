@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma'
-import { Match } from '@prisma/client'
+import { Match, TransactionStatus } from '@prisma/client'
 
 export interface GameAnalytics {
   totalGames: number
@@ -373,13 +373,12 @@ export class GameAnalyticsService {
     const transactions = await prisma.transaction.findMany({
       where: {
         createdAt: { gte: startDate },
-        type: 'ADD_FUNDS',
-        status: 'completed'
+        type: 'DEPOSIT',
+        status: TransactionStatus.COMPLETED
       },
-      include: {
-        user: {
-          select: { id: true, name: true }
-        }
+      select: {
+        userId: true,
+        amount: true
       }
     })
 
@@ -388,11 +387,10 @@ export class GameAnalyticsService {
     const avgRevenuePerUser = uniqueUsers > 0 ? totalRevenue / uniqueUsers : 0
 
     // Calculate top paying users
-    const userRevenue = new Map<string, { name: string; total: number; games: number }>()
+    const userRevenue = new Map<string, { total: number; games: number }>()
     
     for (const transaction of transactions) {
       const current = userRevenue.get(transaction.userId) || { 
-        name: transaction.user.name || 'Unknown', 
         total: 0, 
         games: 0 
       }
@@ -400,15 +398,25 @@ export class GameAnalyticsService {
       userRevenue.set(transaction.userId, current)
     }
 
-    const topPayingUsers = Array.from(userRevenue.entries())
-      .map(([userId, data]) => ({
-        userId,
-        userName: data.name,
-        totalSpent: data.total,
-        gamesPlayed: data.games
-      }))
-      .sort((a, b) => b.totalSpent - a.totalSpent)
+    // Fetch user names for top paying users
+    const topUserIds = Array.from(userRevenue.entries())
+      .sort(([, a], [, b]) => b.total - a.total)
       .slice(0, 10)
+      .map(([userId]) => userId)
+
+    const users = await prisma.user.findMany({
+      where: { id: { in: topUserIds } },
+      select: { id: true, name: true }
+    })
+
+    const userNameMap = new Map(users.map(u => [u.id, u.name || 'Unknown']))
+
+    const topPayingUsers = topUserIds.map(userId => ({
+      userId,
+      userName: userNameMap.get(userId) || 'Unknown',
+      totalSpent: userRevenue.get(userId)?.total || 0,
+      gamesPlayed: userRevenue.get(userId)?.games || 0
+    }))
 
     return {
       totalRevenue,

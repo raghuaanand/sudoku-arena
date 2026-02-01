@@ -11,6 +11,7 @@ const createMatchSchema = z.object({
   type: z.enum(['SINGLE_PLAYER', 'MULTIPLAYER_FREE', 'MULTIPLAYER_PAID']),
   entryFee: z.number().min(0).optional(),
   difficulty: z.enum(['easy', 'medium', 'hard']).default('medium'),
+  timeLimit: z.number().min(60).max(3600).optional(), // Time limit in seconds (1-60 minutes)
 })
 
 export async function POST(request: NextRequest) {
@@ -21,7 +22,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { type, entryFee = 0, difficulty } = createMatchSchema.parse(body)
+    const { type, entryFee = 0, difficulty, timeLimit = 1800 } = createMatchSchema.parse(body)
 
     // Generate a new Sudoku puzzle
     const puzzleData = generatePuzzle(difficulty)
@@ -32,12 +33,14 @@ export async function POST(request: NextRequest) {
         data: {
           type,
           entryFee: 0,
-          prize: 0,
+          prizePool: 0,
+          sudokuSeed: Date.now().toString(),
           sudokuGrid: JSON.stringify(puzzleData.puzzle),
           solution: JSON.stringify(puzzleData.solution),
           player1Id: session.user.id,
           status: 'ONGOING',
           startedAt: new Date(),
+          // Store timeLimit in metadata or as a separate field if needed
         },
         include: {
           player1: {
@@ -46,18 +49,18 @@ export async function POST(request: NextRequest) {
         }
       })
       
-      console.log('Single player match created:', { matchId: match.id, type, status: 201 })
-      return NextResponse.json({ success: true, match }, { status: 201 })
+      console.log('Single player match created:', { matchId: match.id, type, timeLimit, status: 201 })
+      return NextResponse.json({ success: true, match, timeLimit }, { status: 201 })
     }
 
     // For multiplayer matches, check if entry fee is valid
     if (type === 'MULTIPLAYER_PAID' && entryFee > 0) {
-      const user = await prisma.user.findUnique({
-        where: { id: session.user.id },
-        select: { walletBalance: true }
+      const wallet = await prisma.wallet.findUnique({
+        where: { userId: session.user.id },
+        select: { balance: true }
       })
 
-      if (!user || user.walletBalance < entryFee) {
+      if (!wallet || wallet.balance < entryFee) {
         return NextResponse.json(
           { message: 'Insufficient wallet balance' },
           { status: 400 }
@@ -116,14 +119,23 @@ export async function POST(request: NextRequest) {
       const updatedMatch = await prisma.$transaction(async (tx) => {
         // Deduct entry fees from both players if paid match
         if (type === 'MULTIPLAYER_PAID' && entryFee > 0) {
-          await tx.user.update({
-            where: { id: session.user.id },
-            data: { walletBalance: { decrement: entryFee } }
+          // Get current wallet balances
+          const [player2Wallet, player1Wallet] = await Promise.all([
+            tx.wallet.findUnique({ where: { userId: session.user.id } }),
+            tx.wallet.findUnique({ where: { userId: existingMatch.player1Id } })
+          ])
+
+          const player2Balance = player2Wallet?.balance || 0
+          const player1Balance = player1Wallet?.balance || 0
+
+          await tx.wallet.update({
+            where: { userId: session.user.id },
+            data: { balance: { decrement: entryFee } }
           })
           
-          await tx.user.update({
-            where: { id: existingMatch.player1Id },
-            data: { walletBalance: { decrement: entryFee } }
+          await tx.wallet.update({
+            where: { userId: existingMatch.player1Id },
+            data: { balance: { decrement: entryFee } }
           })
 
           // Create entry fee transactions
@@ -134,14 +146,18 @@ export async function POST(request: NextRequest) {
                 amount: -entryFee,
                 type: 'ENTRY_FEE',
                 description: `Entry fee for match ${existingMatch.id}`,
-                status: 'completed'
+                status: 'COMPLETED',
+                balanceBefore: player2Balance,
+                balanceAfter: player2Balance - entryFee
               },
               {
                 userId: existingMatch.player1Id,
                 amount: -entryFee,
                 type: 'ENTRY_FEE',
                 description: `Entry fee for match ${existingMatch.id}`,
-                status: 'completed'
+                status: 'COMPLETED',
+                balanceBefore: player1Balance,
+                balanceAfter: player1Balance - entryFee
               }
             ]
           })
@@ -154,7 +170,7 @@ export async function POST(request: NextRequest) {
             player2Id: session.user.id,
             status: 'ONGOING',
             startedAt: new Date(),
-            prize: entryFee * 2, // Winner takes both entry fees
+            prizePool: entryFee * 2, // Winner takes both entry fees
           },
           include: {
             player1: {
@@ -175,7 +191,8 @@ export async function POST(request: NextRequest) {
       data: {
         type,
         entryFee,
-        prize: 0,
+        prizePool: 0,
+        sudokuSeed: Date.now().toString(),
         sudokuGrid: JSON.stringify(puzzleData.puzzle),
         solution: JSON.stringify(puzzleData.solution),
         player1Id: session.user.id,

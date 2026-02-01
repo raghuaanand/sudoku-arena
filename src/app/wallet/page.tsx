@@ -34,6 +34,8 @@ interface Transaction {
 
 interface WalletData {
   balance: number
+  escrowBalance: number
+  availableBalance: number
   transactions: Transaction[]
   pagination: {
     total: number
@@ -49,6 +51,8 @@ export default function WalletPage() {
 
   const [walletData, setWalletData] = useState<WalletData>({
     balance: 0,
+    escrowBalance: 0,
+    availableBalance: 0,
     transactions: [],
     pagination: { total: 0, page: 1, limit: 10, totalPages: 0 }
   })
@@ -84,6 +88,8 @@ export default function WalletPage() {
 
       setWalletData({
         balance: balanceData.balance || 0,
+        escrowBalance: balanceData.escrowBalance || 0,
+        availableBalance: balanceData.availableBalance || balanceData.balance || 0,
         transactions: transactionsData.transactions || [],
         pagination: transactionsData.pagination || { total: 0, page: 1, limit: 10, totalPages: 0 }
       })
@@ -112,7 +118,7 @@ export default function WalletPage() {
       const orderData = await response.json()
       if (!response.ok) throw new Error(orderData.error || 'Failed to create order')
 
-      // Simulate payment success
+      // Simulate payment success (in production, Razorpay will call the callback)
       const verifyResponse = await fetch('/api/payments/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -120,7 +126,7 @@ export default function WalletPage() {
           orderId: orderData.orderId,
           paymentId: `pay_${Date.now()}`,
           signature: 'mock_signature',
-          transactionId: orderData.transactionId
+          paymentOrderId: orderData.paymentOrderId
         })
       })
 
@@ -147,8 +153,8 @@ export default function WalletPage() {
       return
     }
 
-    if (amount > walletData.balance) {
-      alert('Insufficient balance')
+    if (amount > walletData.availableBalance / 100) { // Convert paisa to rupees
+      alert('Insufficient available balance')
       return
     }
 
@@ -239,10 +245,24 @@ export default function WalletPage() {
         <Card variant="highlight" className="animate-fade-in-up">
           <CardContent className="p-8">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6">
-              <div>
-                <p className="text-sm text-muted-foreground mb-2">Available Balance</p>
-                <div className="flex items-baseline gap-1">
-                  <span className="text-4xl font-bold">₹{walletData.balance.toFixed(2)}</span>
+              <div className="space-y-4">
+                <div>
+                  <p className="text-sm text-muted-foreground mb-2">Total Balance</p>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-4xl font-bold">₹{(walletData.balance / 100).toFixed(2)}</span>
+                  </div>
+                </div>
+                <div className="flex gap-6 text-sm">
+                  <div>
+                    <span className="text-muted-foreground">Available: </span>
+                    <span className="font-semibold text-green-600">₹{(walletData.availableBalance / 100).toFixed(2)}</span>
+                  </div>
+                  {walletData.escrowBalance > 0 && (
+                    <div>
+                      <span className="text-muted-foreground">In Matches: </span>
+                      <span className="font-semibold text-amber-600">₹{(walletData.escrowBalance / 100).toFixed(2)}</span>
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="flex gap-3">

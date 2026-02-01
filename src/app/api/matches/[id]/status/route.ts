@@ -60,7 +60,7 @@ export async function GET(
       status: match.status,
       type: match.type,
       entryFee: match.entryFee,
-      prize: match.prize,
+      prizePool: match.prizePool,
       startedAt: match.startedAt,
       endedAt: match.endedAt,
       winnerId: match.winnerId,
@@ -154,11 +154,19 @@ export async function POST(
         })
 
         // Award prize if applicable
-        if (match.prize > 0) {
-          await prisma.user.update({
-            where: { id: session.user.id },
-            data: {
-              walletBalance: { increment: match.prize }
+        if (match.prizePool > 0) {
+          // Get current wallet balance
+          const wallet = await prisma.wallet.findUnique({ where: { userId: session.user.id } })
+          const currentBalance = wallet?.balance || 0
+
+          await prisma.wallet.upsert({
+            where: { userId: session.user.id },
+            update: {
+              balance: { increment: match.prizePool }
+            },
+            create: {
+              userId: session.user.id,
+              balance: match.prizePool
             }
           })
 
@@ -166,10 +174,12 @@ export async function POST(
           await prisma.transaction.create({
             data: {
               userId: session.user.id,
-              amount: match.prize,
+              amount: match.prizePool,
               type: 'MATCH_WIN',
               description: `Prize won for match ${matchId}`,
-              status: 'completed'
+              status: 'COMPLETED',
+              balanceBefore: currentBalance,
+              balanceAfter: currentBalance + match.prizePool
             }
           })
         }

@@ -81,20 +81,27 @@ export async function POST(
         })
 
         // Award prize if it's a paid match
-        if (updated.prize > 0 && winnerId) {
-          await tx.user.update({
-            where: { id: winnerId },
-            data: { walletBalance: { increment: updated.prize } }
+        if (updated.prizePool > 0 && winnerId) {
+          // Get current wallet balance
+          const wallet = await tx.wallet.findUnique({ where: { userId: winnerId } })
+          const currentBalance = wallet?.balance || 0
+
+          await tx.wallet.upsert({
+            where: { userId: winnerId },
+            update: { balance: { increment: updated.prizePool } },
+            create: { userId: winnerId, balance: updated.prizePool }
           })
 
           // Create win transaction
           await tx.transaction.create({
             data: {
               userId: winnerId,
-              amount: updated.prize,
+              amount: updated.prizePool,
               type: 'MATCH_WIN',
               description: `Prize for winning match ${updated.id}`,
-              status: 'completed'
+              status: 'COMPLETED',
+              balanceBefore: currentBalance,
+              balanceAfter: currentBalance + updated.prizePool
             }
           })
         }
@@ -155,10 +162,14 @@ export async function GET(
       return NextResponse.json({ message: 'Match not found' }, { status: 404 })
     }
 
-    // Check if user is part of this match or if it's a completed public match
-    if (match.player1Id !== session.user.id && 
-        match.player2Id !== session.user.id && 
-        match.status !== 'FINISHED') {
+    // Check if user is part of this match, or if it's a waiting match (player2 can join)
+    // or if it's a completed public match
+    const isPlayer1 = match.player1Id === session.user.id
+    const isPlayer2 = match.player2Id === session.user.id
+    const isWaitingForPlayer2 = match.status === 'WAITING' && match.player2Id === null
+    const isFinished = match.status === 'FINISHED'
+    
+    if (!isPlayer1 && !isPlayer2 && !isWaitingForPlayer2 && !isFinished) {
       return NextResponse.json({ message: 'Unauthorized' }, { status: 403 })
     }
 

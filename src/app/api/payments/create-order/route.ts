@@ -3,6 +3,8 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { createRazorpayOrder } from '@/lib/razorpay'
+import { PaymentPurpose, PaymentStatus } from '@prisma/client'
+import { v4 as uuidv4 } from 'uuid'
 
 export async function POST(request: NextRequest) {
   try {
@@ -18,18 +20,25 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid amount' }, { status: 400 })
     }
 
-    // Create Razorpay order
-    const order = await createRazorpayOrder(amount, session.user.id, `Wallet recharge - ₹${amount}`)
+    // Convert rupees to paisa
+    const amountInPaisa = Math.round(amount * 100)
+    
+    // Generate idempotency key
+    const idempotencyKey = `wallet_deposit_${session.user.id}_${uuidv4()}`
 
-    // Save pending transaction
-    const transaction = await prisma.transaction.create({
+    // Create Razorpay order
+    const order = await createRazorpayOrder(amountInPaisa, session.user.id, `Wallet recharge - ₹${amount}`)
+
+    // Save payment order
+    const paymentOrder = await prisma.paymentOrder.create({
       data: {
         userId: session.user.id,
-        amount,
-        type: 'ADD_FUNDS',
-        description: `Wallet recharge - ₹${amount}`,
-        status: 'PENDING',
-        razorpayId: order.id
+        razorpayOrderId: order.id,
+        amount: amountInPaisa,
+        currency: 'INR',
+        status: PaymentStatus.CREATED,
+        purpose: PaymentPurpose.WALLET_DEPOSIT,
+        idempotencyKey
       }
     })
 
@@ -37,7 +46,7 @@ export async function POST(request: NextRequest) {
       orderId: order.id,
       amount: order.amount,
       currency: order.currency,
-      transactionId: transaction.id,
+      paymentOrderId: paymentOrder.id,
       razorpayKey: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || 'rzp_test_mock_key'
     })
   } catch (error) {

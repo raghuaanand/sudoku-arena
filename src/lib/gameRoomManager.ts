@@ -3,11 +3,72 @@
 
 import { PrismaClient } from '@prisma/client'
 import { Server as SocketServer } from 'socket.io'
-import { isValidMove, isComplete } from '@/utils/sudoku'
-// import { SkillBasedMatchmaking } from './matchmaking'
-// import GameAnalyticsService from './gameAnalytics'
+// Note: Inlining sudoku validation functions to avoid TypeScript import issues when running with Node.js directly
 
 const prisma = new PrismaClient()
+
+// Inlined validation functions to avoid TypeScript path alias issues
+type SudokuGrid = (number | null)[][]
+
+function isValidMove(grid: SudokuGrid, row: number, col: number, num: number): boolean {
+  if (!grid || !Array.isArray(grid) || grid.length !== 9) return false
+  if (row < 0 || row >= 9 || col < 0 || col >= 9) return false
+  if (num < 1 || num > 9) return false
+
+  // Check row
+  for (let x = 0; x < 9; x++) {
+    if (Array.isArray(grid[row]) && grid[row][x] === num) return false
+  }
+
+  // Check column
+  for (let x = 0; x < 9; x++) {
+    if (Array.isArray(grid[x]) && grid[x][col] === num) return false
+  }
+
+  // Check 3x3 box
+  const startRow = row - (row % 3)
+  const startCol = col - (col % 3)
+  for (let i = 0; i < 3; i++) {
+    for (let j = 0; j < 3; j++) {
+      if (Array.isArray(grid[i + startRow]) && grid[i + startRow][j + startCol] === num) return false
+    }
+  }
+  return true
+}
+
+function isValidGrid(grid: SudokuGrid): boolean {
+  if (!grid || !Array.isArray(grid) || grid.length !== 9) return false
+  
+  for (let row = 0; row < 9; row++) {
+    if (!Array.isArray(grid[row]) || grid[row].length !== 9) return false
+    
+    for (let col = 0; col < 9; col++) {
+      const num = grid[row][col]
+      if (num !== null && num !== 0 && num !== undefined) {
+        grid[row][col] = null
+        const valid = isValidMove(grid, row, col, num as number)
+        grid[row][col] = num
+        if (!valid) return false
+      }
+    }
+  }
+  return true
+}
+
+function isComplete(grid: SudokuGrid): boolean {
+  if (!grid || !Array.isArray(grid) || grid.length !== 9) return false
+  
+  for (let row = 0; row < 9; row++) {
+    if (!Array.isArray(grid[row]) || grid[row].length !== 9) return false
+    
+    for (let col = 0; col < 9; col++) {
+      if (grid[row][col] === null || grid[row][col] === 0 || grid[row][col] === undefined) {
+        return false
+      }
+    }
+  }
+  return isValidGrid(grid)
+}
 
 export interface GameRoom {
   id: string
@@ -650,6 +711,8 @@ export class GameRoomManager {
       })),
       spectatorCount: room.spectators.length,
       gameState: {
+        grid: room.gameState.puzzle, // Include the puzzle grid for syncing
+        solution: room.gameState.solution, // Include solution for hints
         timeRemaining: room.gameState.timeRemaining,
         gameMode: room.gameState.gameMode,
         difficulty: room.gameState.difficulty

@@ -31,6 +31,15 @@ export function MatchMaking({ gameMode, onBack }: MatchMakingProps) {
   const router = useRouter()
   const [isSearching, setIsSearching] = useState(false)
   const [matchFound, setMatchFound] = useState(false)
+  const [queuePosition, setQueuePosition] = useState<number | null>(null)
+  const [selectedTimeLimit, setSelectedTimeLimit] = useState<number>(30) // minutes
+
+  const timeLimitOptions = [
+    { value: 5, label: '5 min' },
+    { value: 10, label: '10 min' },
+    { value: 15, label: '15 min' },
+    { value: 30, label: '30 min' },
+  ]
 
   const handleStartGame = async () => {
     if (!session?.user?.id) {
@@ -41,6 +50,40 @@ export function MatchMaking({ gameMode, onBack }: MatchMakingProps) {
     setIsSearching(true)
     
     try {
+      // For paid matches, use the new queue API
+      if (gameMode === 'PAID_TOURNAMENT') {
+        const entryFeeInPaisa = 10000 // ₹100 in paisa
+        
+        const response = await fetch('/api/queue', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            entryFee: entryFeeInPaisa,
+            difficulty: 'MEDIUM'
+          })
+        })
+        
+        if (!response.ok) {
+          const errorData = await response.json()
+          throw new Error(errorData.error || 'Failed to join queue')
+        }
+
+        const data = await response.json()
+        
+        if (data.status === 'matched' && data.matchId) {
+          setMatchFound(true)
+          setTimeout(() => {
+            router.push(`/game/${data.matchId}`)
+          }, 1500)
+        } else if (data.status === 'queued') {
+          setQueuePosition(data.position || 1)
+          // Poll for match status
+          pollQueueStatus()
+        }
+        return
+      }
+
+      // For single player and free matches, use existing matches API
       const typeMapping = {
         'SINGLE': 'SINGLE_PLAYER',
         'MULTIPLAYER_FREE': 'MULTIPLAYER_FREE', 
@@ -52,8 +95,9 @@ export function MatchMaking({ gameMode, onBack }: MatchMakingProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           type: typeMapping[gameMode],
-          entryFee: gameMode === 'PAID_TOURNAMENT' ? 100 : 0,
-          difficulty: 'medium'
+          entryFee: 0,
+          difficulty: 'medium',
+          timeLimit: gameMode === 'SINGLE' ? selectedTimeLimit * 60 : 1800 // Pass time in seconds
         })
       })
       
@@ -66,6 +110,12 @@ export function MatchMaking({ gameMode, onBack }: MatchMakingProps) {
       
       if (gameMode === 'SINGLE') {
         if (data.match?.id) {
+          // Store timeLimit in sessionStorage for GameRoom to read
+          if (data.timeLimit) {
+            sessionStorage.setItem(`match_${data.match.id}_timeLimit`, data.timeLimit.toString())
+          } else {
+            sessionStorage.setItem(`match_${data.match.id}_timeLimit`, (selectedTimeLimit * 60).toString())
+          }
           router.push(`/game/${data.match.id}`)
         } else {
           throw new Error('Invalid match response')
@@ -94,6 +144,64 @@ export function MatchMaking({ gameMode, onBack }: MatchMakingProps) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error'
       alert(`Failed to create match: ${errorMessage}`)
     }
+  }
+
+  const pollQueueStatus = async () => {
+    let attempts = 0
+    const maxAttempts = 60 // 60 seconds timeout
+    
+    const poll = async () => {
+      try {
+        const response = await fetch('/api/queue')
+        if (!response.ok) {
+          throw new Error('Failed to check queue status')
+        }
+        
+        const data = await response.json()
+        
+        if (data.matchId) {
+          setMatchFound(true)
+          setTimeout(() => {
+            router.push(`/game/${data.matchId}`)
+          }, 1500)
+          return
+        }
+        
+        if (data.inQueue) {
+          setQueuePosition(data.position || 1)
+          attempts++
+          if (attempts < maxAttempts) {
+            setTimeout(poll, 1000)
+          } else {
+            // Leave queue on timeout
+            await fetch('/api/queue', { method: 'DELETE' })
+            setIsSearching(false)
+            alert('No opponents found. Please try again later.')
+            onBack()
+          }
+        } else {
+          setIsSearching(false)
+          onBack()
+        }
+      } catch (error) {
+        console.error('Queue poll error:', error)
+        setIsSearching(false)
+        onBack()
+      }
+    }
+    
+    poll()
+  }
+
+  const handleCancelSearch = async () => {
+    try {
+      await fetch('/api/queue', { method: 'DELETE' })
+    } catch (error) {
+      console.error('Error leaving queue:', error)
+    }
+    setIsSearching(false)
+    setQueuePosition(null)
+    onBack()
   }
 
   const gameModeInfo = {
@@ -196,9 +304,15 @@ export function MatchMaking({ gameMode, onBack }: MatchMakingProps) {
 
             {!matchFound && gameMode !== 'SINGLE' && (
               <div className="space-y-3 pt-4">
+                {queuePosition !== null && (
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Queue Position</span>
+                    <Badge variant="outline">#{queuePosition}</Badge>
+                  </div>
+                )}
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">Players found</span>
-                  <Badge>1/{gameMode === 'PAID_TOURNAMENT' ? '8' : '2'}</Badge>
+                  <Badge>1/{gameMode === 'PAID_TOURNAMENT' ? '2' : '2'}</Badge>
                 </div>
                 <div className="h-2 bg-muted rounded-full overflow-hidden">
                   <div className="h-full bg-primary rounded-full w-1/2 animate-pulse" />
@@ -207,7 +321,7 @@ export function MatchMaking({ gameMode, onBack }: MatchMakingProps) {
             )}
 
             {!matchFound && (
-              <Button variant="ghost" onClick={() => { setIsSearching(false); onBack(); }}>
+              <Button variant="ghost" onClick={handleCancelSearch}>
                 Cancel Search
               </Button>
             )}
@@ -272,7 +386,7 @@ export function MatchMaking({ gameMode, onBack }: MatchMakingProps) {
                 {[
                   'Fill the 9×9 grid with digits 1-9',
                   'Each row, column, and 3×3 box must contain all digits 1-9',
-                  'First player to complete the puzzle wins',
+                  gameMode === 'SINGLE' ? 'Complete the puzzle before time runs out' : 'First player to complete the puzzle wins',
                   gameMode !== 'SINGLE' && 'Game has a 30-minute time limit',
                   gameMode === 'PAID_TOURNAMENT' && 'Winner takes the prize pool',
                 ].filter(Boolean).map((rule, i) => (
@@ -283,6 +397,29 @@ export function MatchMaking({ gameMode, onBack }: MatchMakingProps) {
                 ))}
               </ul>
             </div>
+
+            {/* Time Limit Selection for Single Player */}
+            {gameMode === 'SINGLE' && (
+              <div className="space-y-4">
+                <h3 className="font-semibold flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-muted-foreground" />
+                  Select Time Limit
+                </h3>
+                <div className="grid grid-cols-4 gap-2">
+                  {timeLimitOptions.map((option) => (
+                    <Button
+                      key={option.value}
+                      variant={selectedTimeLimit === option.value ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setSelectedTimeLimit(option.value)}
+                      className="w-full"
+                    >
+                      {option.label}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Warning for paid tournament */}
             {gameMode === 'PAID_TOURNAMENT' && (

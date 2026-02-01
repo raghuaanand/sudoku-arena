@@ -37,6 +37,25 @@ function DashboardContent() {
   const [selectedGameMode, setSelectedGameMode] = useState<'SINGLE' | 'MULTIPLAYER_FREE' | 'PAID_TOURNAMENT' | null>(null)
   const [walletBalance, setWalletBalance] = useState<number>(0)
   const [loadingWallet, setLoadingWallet] = useState(true)
+  const [userStats, setUserStats] = useState<{
+    totalGamesPlayed: number
+    gamesWon: number
+    winRate: number
+    recentMatches: Array<{
+      id: string
+      type: string
+      status: string
+      createdAt: string
+      endedAt: string | null
+      player1: { id: string; name: string | null; image: string | null }
+      player2: { id: string; name: string | null; image: string | null } | null
+      winner: { id: string; name: string | null } | null
+      prizePool: number
+      isWinner: boolean
+      isSinglePlayer: boolean
+    }>
+  } | null>(null)
+  const [loadingStats, setLoadingStats] = useState(true)
 
   useEffect(() => {
     if (status === 'loading') return
@@ -59,6 +78,7 @@ function DashboardContent() {
 
     if (session?.user?.id) {
       fetchWalletBalance()
+      fetchUserStats()
     }
   }, [session, status, router, searchParams])
 
@@ -67,12 +87,27 @@ function DashboardContent() {
       const response = await fetch('/api/wallet')
       if (response.ok) {
         const data = await response.json()
-        setWalletBalance(data.balance || 0)
+        // Balance is now in paisa, convert to rupees for display
+        setWalletBalance((data.availableBalance || data.balance || 0) / 100)
       }
     } catch (error) {
       console.error('Error fetching wallet balance:', error)
     } finally {
       setLoadingWallet(false)
+    }
+  }
+
+  const fetchUserStats = async () => {
+    try {
+      const response = await fetch('/api/user/stats')
+      if (response.ok) {
+        const data = await response.json()
+        setUserStats(data)
+      }
+    } catch (error) {
+      console.error('Error fetching user stats:', error)
+    } finally {
+      setLoadingStats(false)
     }
   }
 
@@ -186,7 +221,13 @@ function DashboardContent() {
             </div>
             <div className="space-y-1">
               <p className="text-sm text-muted-foreground">Games Played</p>
-              <p className="text-2xl font-bold">0</p>
+              <p className="text-2xl font-bold">
+                {loadingStats ? (
+                  <span className="skeleton inline-block w-12 h-7" />
+                ) : (
+                  userStats?.totalGamesPlayed || 0
+                )}
+              </p>
             </div>
           </Card>
 
@@ -198,7 +239,13 @@ function DashboardContent() {
             </div>
             <div className="space-y-1">
               <p className="text-sm text-muted-foreground">Victories</p>
-              <p className="text-2xl font-bold">0</p>
+              <p className="text-2xl font-bold">
+                {loadingStats ? (
+                  <span className="skeleton inline-block w-12 h-7" />
+                ) : (
+                  userStats?.gamesWon || 0
+                )}
+              </p>
             </div>
           </Card>
 
@@ -210,7 +257,15 @@ function DashboardContent() {
             </div>
             <div className="space-y-1">
               <p className="text-sm text-muted-foreground">Win Rate</p>
-              <p className="text-2xl font-bold">—</p>
+              <p className="text-2xl font-bold">
+                {loadingStats ? (
+                  <span className="skeleton inline-block w-12 h-7" />
+                ) : userStats?.winRate !== undefined ? (
+                  `${userStats.winRate}%`
+                ) : (
+                  '—'
+                )}
+              </p>
             </div>
           </Card>
         </div>
@@ -329,19 +384,84 @@ function DashboardContent() {
             <CardDescription>Your latest matches and achievements</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-center py-12">
-              <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center mx-auto mb-4">
-                <Play className="w-8 h-8 text-muted-foreground" />
+            {loadingStats ? (
+              <div className="space-y-3">
+                {[1, 2, 3].map(i => (
+                  <div key={i} className="skeleton h-16 w-full rounded-lg" />
+                ))}
               </div>
-              <h3 className="font-semibold mb-2">No activity yet</h3>
-              <p className="text-sm text-muted-foreground mb-6 max-w-sm mx-auto">
-                Start playing to see your match history and achievements here.
-              </p>
-              <Button onClick={() => router.push('/create-match')}>
-                <Sparkles className="w-4 h-4" />
-                Play Your First Game
-              </Button>
-            </div>
+            ) : userStats?.recentMatches && userStats.recentMatches.length > 0 ? (
+              <div className="space-y-3">
+                {userStats.recentMatches.map((match) => (
+                  <Link key={match.id} href={`/game/${match.id}`}>
+                    <div className="flex items-center justify-between p-4 rounded-lg bg-muted/50 hover:bg-muted transition-colors cursor-pointer border">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                          match.isSinglePlayer 
+                            ? 'bg-primary/10' 
+                            : match.isWinner 
+                            ? 'bg-success/10' 
+                            : 'bg-muted'
+                        }`}>
+                          {match.isSinglePlayer ? (
+                            <Bot className="w-5 h-5 text-primary" />
+                          ) : match.isWinner ? (
+                            <Trophy className="w-5 h-5 text-success" />
+                          ) : (
+                            <Users className="w-5 h-5 text-muted-foreground" />
+                          )}
+                        </div>
+                        <div>
+                          <p className="font-medium">
+                            {match.isSinglePlayer 
+                              ? 'Solo Training' 
+                              : match.isWinner 
+                              ? 'Victory!' 
+                              : 'Match Completed'}
+                          </p>
+                          <p className="text-sm text-muted-foreground">
+                            {new Date(match.createdAt).toLocaleDateString()} • {
+                              match.type === 'SINGLE_PLAYER' ? 'Single Player' :
+                              match.type === 'MULTIPLAYER_FREE' ? 'Free Match' :
+                              'Paid Match'
+                            }
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge variant={
+                          match.status === 'FINISHED' ? 'secondary' : 
+                          match.status === 'ONGOING' ? 'default' : 'outline'
+                        }>
+                          {match.status === 'FINISHED' ? 'Completed' : match.status}
+                        </Badge>
+                        <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                      </div>
+                    </div>
+                  </Link>
+                ))}
+                <Link href="/matches">
+                  <Button variant="outline" className="w-full mt-2">
+                    View All Matches
+                    <ChevronRight className="w-4 h-4 ml-1" />
+                  </Button>
+                </Link>
+              </div>
+            ) : (
+              <div className="text-center py-12">
+                <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center mx-auto mb-4">
+                  <Play className="w-8 h-8 text-muted-foreground" />
+                </div>
+                <h3 className="font-semibold mb-2">No activity yet</h3>
+                <p className="text-sm text-muted-foreground mb-6 max-w-sm mx-auto">
+                  Start playing to see your match history and achievements here.
+                </p>
+                <Button onClick={() => router.push('/create-match')}>
+                  <Sparkles className="w-4 h-4" />
+                  Play Your First Game
+                </Button>
+              </div>
+            )}
           </CardContent>
         </Card>
       </main>

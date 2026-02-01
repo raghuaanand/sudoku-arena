@@ -8,6 +8,10 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
+// ============================================
+// AUTH & USER MODELS
+// ============================================
+
 model Account {
   id                String  @id @default(cuid())
   userId            String
@@ -41,17 +45,28 @@ model User {
   password       String?
   emailVerified  DateTime?
   image          String?
-  walletBalance  Int               @default(0)
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
+  
+  // Relations
   accounts       Account[]
+  sessions       Session[]
+  wallet         Wallet?
   player1Matches Match[]           @relation("Player1")
   player2Matches Match[]           @relation("Player2")
-  sessions       Session[]
+  wonMatches     Match[]           @relation("Winner")
   transactions   Transaction[]
+  moves          MatchMove[]
   achievements   UserAchievement[]
-  createdTournaments Tournament[]  @relation("TournamentCreator")
+  queueEntries   MatchmakingQueue[]
+  paymentOrders  PaymentOrder[]
+  auditLogs      AuditLog[]
+  
+  // Tournaments
+  createdTournaments    Tournament[]            @relation("TournamentCreator")
   tournamentParticipations TournamentParticipant[]
+  
+  @@index([email])
 }
 
 model VerificationToken {
@@ -62,72 +77,268 @@ model VerificationToken {
   @@unique([identifier, token])
 }
 
-model Match {
-  id         String      @id @default(cuid())
-  type       MatchType
-  entryFee   Int         @default(0)
-  prize      Int         @default(0)
-  sudokuGrid String
-  solution   String?
-  player1Id  String
-  player2Id  String?
-  winnerId   String?
-  startedAt  DateTime    @default(now())
-  endedAt    DateTime?
-  status     MatchStatus @default(WAITING)
-  createdAt  DateTime    @default(now())
-  updatedAt  DateTime    @updatedAt
-  player1    User        @relation("Player1", fields: [player1Id], references: [id])
-  player2    User?       @relation("Player2", fields: [player2Id], references: [id])
+// ============================================
+// WALLET & FINANCIAL MODELS
+// ============================================
 
-  @@index([status])
-  @@index([type])
+// Separate Wallet model for better transaction safety
+model Wallet {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  balance         Int      @default(0)  // Balance in paisa (INR * 100)
+  escrowBalance   Int      @default(0)  // Funds locked for active matches
+  totalDeposited  Int      @default(0)  // Lifetime deposits
+  totalWithdrawn  Int      @default(0)  // Lifetime withdrawals
+  totalWon        Int      @default(0)  // Lifetime winnings
+  totalLost       Int      @default(0)  // Lifetime losses
+  version         Int      @default(0)  // Optimistic locking
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
 }
 
-model Transaction {
-  id          String          @id @default(cuid())
-  userId      String
-  amount      Int
-  type        TransactionType
-  description String?
-  razorpayId  String?
-  status      String          @default("pending")
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
-  user        User            @relation(fields: [userId], references: [id])
+// Payment orders for Razorpay integration
+model PaymentOrder {
+  id                String        @id @default(cuid())
+  userId            String
+  razorpayOrderId   String        @unique
+  amount            Int           // Amount in paisa
+  currency          String        @default("INR")
+  status            PaymentStatus @default(CREATED)
+  purpose           PaymentPurpose
+  
+  // Razorpay payment details (filled after payment)
+  razorpayPaymentId String?       @unique
+  razorpaySignature String?
+  
+  // Match reference (for entry fee payments)
+  matchId           String?
+  
+  // Idempotency
+  idempotencyKey    String        @unique
+  
+  // Timestamps
+  createdAt         DateTime      @default(now())
+  paidAt            DateTime?
+  verifiedAt        DateTime?
+  failedAt          DateTime?
+  refundedAt        DateTime?
+  
+  // Error tracking
+  errorMessage      String?
+  
+  user              User          @relation(fields: [userId], references: [id])
+  match             Match?        @relation(fields: [matchId], references: [id])
+  
+  @@index([userId])
+  @@index([razorpayOrderId])
+  @@index([status])
+  @@index([idempotencyKey])
+}
 
+// Financial transactions with full audit trail
+model Transaction {
+  id              String          @id @default(cuid())
+  userId          String
+  amount          Int             // Amount in paisa (positive = credit, negative = debit)
+  type            TransactionType
+  status          TransactionStatus @default(COMPLETED)
+  
+  // References
+  matchId         String?
+  paymentOrderId  String?
+  referenceId     String?         // External reference (e.g., payout ID)
+  
+  // Balances at time of transaction (for reconciliation)
+  balanceBefore   Int
+  balanceAfter    Int
+  
+  description     String?
+  metadata        Json?           // Additional context
+  
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  
+  user            User            @relation(fields: [userId], references: [id])
+  match           Match?          @relation(fields: [matchId], references: [id])
+  
   @@index([userId])
   @@index([type])
+  @@index([matchId])
+  @@index([createdAt])
 }
 
-enum MatchType {
-  SINGLE_PLAYER
-  MULTIPLAYER_FREE
-  MULTIPLAYER_PAID
+// ============================================
+// MATCH & GAME MODELS
+// ============================================
+
+model Match {
+  id              String        @id @default(cuid())
+  type            MatchType
+  status          MatchStatus   @default(WAITING)
+  
+  // Entry fee and prize
+  entryFee        Int           @default(0)  // In paisa
+  platformFee     Int           @default(0)  // Platform cut in paisa
+  prizePool       Int           @default(0)  // Total prize in paisa
+  
+  // Players
+  player1Id       String
+  player2Id       String?
+  winnerId        String?
+  
+  // Game configuration
+  duration        Int           @default(600) // Match duration in seconds (e.g., 5 or 10 min)
+  difficulty      Difficulty    @default(MEDIUM)
+  
+  // Sudoku boards (each player gets same difficulty, different board)
+  // Stored as JSON: { puzzle: number[][], solution: number[][] }
+  sudokuSeed      String        // Deterministic seed for board generation
+  sudokuGrid      String        // JSON: puzzle grid
+  solution        String?       // JSON: solution grid
+  
+  // Scoring
+  player1Score    Int           @default(0)  // Correct entries count
+  player2Score    Int           @default(0)
+  
+  // Timestamps
+  createdAt       DateTime      @default(now())
+  startedAt       DateTime?     // When both players ready
+  endedAt         DateTime?     // When match concluded
+  updatedAt       DateTime      @updatedAt
+  
+  // Escrow tracking
+  escrowStatus    EscrowStatus  @default(NONE)
+  escrowLocked    Int           @default(0)  // Total locked in escrow
+  
+  // Cancellation/refund reason
+  cancelReason    String?
+  
+  // Relations
+  player1         User          @relation("Player1", fields: [player1Id], references: [id])
+  player2         User?         @relation("Player2", fields: [player2Id], references: [id])
+  winner          User?         @relation("Winner", fields: [winnerId], references: [id])
+  moves           MatchMove[]
+  transactions    Transaction[]
+  paymentOrders   PaymentOrder[]
+  chatMessages    ChatMessage[]
+  
+  @@index([status])
+  @@index([type])
+  @@index([player1Id])
+  @@index([player2Id])
+  @@index([createdAt])
 }
 
-enum MatchStatus {
-  WAITING
-  ONGOING
-  FINISHED
-  CANCELLED
+// Server-authoritative move tracking
+model MatchMove {
+  id          String    @id @default(cuid())
+  matchId     String
+  playerId    String
+  
+  row         Int       // 0-8
+  col         Int       // 0-8
+  value       Int       // 1-9 (0 for clear)
+  
+  isCorrect   Boolean   // Validated against solution
+  timestamp   DateTime  @default(now())
+  
+  // Anti-cheat metadata
+  clientTimestamp DateTime?
+  latencyMs   Int?      // Server - client timestamp diff
+  
+  match       Match     @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  player      User      @relation(fields: [playerId], references: [id])
+  
+  @@index([matchId])
+  @@index([playerId])
+  @@index([timestamp])
 }
 
-enum TransactionType {
-  ADD_FUNDS
-  WITHDRAW
-  MATCH_WIN
-  ENTRY_FEE
-  ADMIN_CREDIT
-  ADMIN_DEBIT
+// In-game chat
+model ChatMessage {
+  id        String   @id @default(cuid())
+  matchId   String
+  userId    String
+  message   String
+  timestamp DateTime @default(now())
+  
+  match     Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  
+  @@index([matchId])
+  @@index([timestamp])
 }
 
-enum TournamentStatus {
-  REGISTRATION_OPEN
-  IN_PROGRESS
-  COMPLETED
-  CANCELLED
+// ============================================
+// MATCHMAKING QUEUE
+// ============================================
+
+model MatchmakingQueue {
+  id          String        @id @default(cuid())
+  userId      String
+  status      QueueStatus   @default(WAITING)
+  
+  // Match preferences
+  entryFee    Int           // Desired entry fee in paisa
+  duration    Int           // Desired match duration in seconds
+  difficulty  Difficulty    @default(MEDIUM)
+  
+  // Payment authorization
+  paymentOrderId  String?   // Razorpay order for entry fee
+  paymentAuthorized Boolean @default(false)
+  
+  // Timestamps
+  joinedAt    DateTime      @default(now())
+  matchedAt   DateTime?
+  expiredAt   DateTime?
+  
+  // Matched result
+  matchId     String?
+  
+  user        User          @relation(fields: [userId], references: [id])
+  
+  @@unique([userId, status]) // Only one active queue entry per user
+  @@index([status])
+  @@index([entryFee])
+  @@index([joinedAt])
 }
+
+// ============================================
+// AUDIT & OBSERVABILITY
+// ============================================
+
+model AuditLog {
+  id          String      @id @default(cuid())
+  userId      String?
+  action      AuditAction
+  entityType  String      // e.g., "Match", "Transaction", "Wallet"
+  entityId    String
+  
+  // Change details
+  before      Json?       // State before change
+  after       Json?       // State after change
+  metadata    Json?       // Additional context
+  
+  // Request context
+  ipAddress   String?
+  userAgent   String?
+  
+  timestamp   DateTime    @default(now())
+  
+  user        User?       @relation(fields: [userId], references: [id])
+  
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@index([action])
+  @@index([timestamp])
+}
+
+// ============================================
+// TOURNAMENTS (existing, enhanced)
+// ============================================
 
 model Tournament {
   id              String                    @id @default(cuid())
@@ -170,4 +381,103 @@ model UserAchievement {
   
   @@unique([userId, achievementId])
   @@index([userId])
+}
+
+// ============================================
+// ENUMS
+// ============================================
+
+enum MatchType {
+  SINGLE_PLAYER
+  MULTIPLAYER_FREE
+  MULTIPLAYER_PAID
+}
+
+enum MatchStatus {
+  WAITING           // Waiting for opponent
+  PAYMENT_PENDING   // Waiting for both players to pay
+  READY             // Both paid, ready to start
+  ONGOING           // Match in progress
+  FINISHED          // Match completed normally
+  CANCELLED         // Match cancelled (refunds issued)
+  ABANDONED         // Player disconnected/left
+}
+
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum EscrowStatus {
+  NONE              // No escrow required (free match)
+  PENDING           // Waiting for funds
+  LOCKED            // Funds locked in escrow
+  RELEASED          // Funds released to winner
+  REFUNDED          // Funds refunded to players
+}
+
+enum TransactionType {
+  DEPOSIT           // Razorpay payment to wallet
+  WITHDRAWAL        // Wallet to bank account
+  ENTRY_FEE         // Deducted for match entry
+  ESCROW_LOCK       // Moved to escrow
+  ESCROW_RELEASE    // Released from escrow to winner
+  MATCH_WIN         // Winnings credited
+  REFUND            // Refund from cancelled match
+  PLATFORM_FEE      // Platform commission
+  ADMIN_CREDIT      // Manual credit by admin
+  ADMIN_DEBIT       // Manual debit by admin
+}
+
+enum TransactionStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REVERSED
+}
+
+enum PaymentStatus {
+  CREATED           // Order created in Razorpay
+  AUTHORIZED        // Payment authorized (pre-match)
+  CAPTURED          // Payment captured
+  FAILED            // Payment failed
+  REFUNDED          // Payment refunded
+  EXPIRED           // Order expired without payment
+}
+
+enum PaymentPurpose {
+  WALLET_DEPOSIT    // Adding funds to wallet
+  MATCH_ENTRY       // Paying for match entry
+  TOURNAMENT_ENTRY  // Paying for tournament entry
+}
+
+enum QueueStatus {
+  WAITING           // In queue, waiting for match
+  MATCHED           // Matched with opponent
+  EXPIRED           // Queue entry expired
+  CANCELLED         // User cancelled
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  PAYMENT_RECEIVED
+  PAYMENT_FAILED
+  ESCROW_LOCKED
+  ESCROW_RELEASED
+  REFUND_ISSUED
+  MATCH_STARTED
+  MATCH_ENDED
+  MOVE_MADE
+  LOGIN
+  LOGOUT
+}
+
+enum TournamentStatus {
+  REGISTRATION_OPEN
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
 }

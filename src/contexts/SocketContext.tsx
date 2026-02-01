@@ -44,6 +44,13 @@ interface RoomState {
   }
 }
 
+interface ChatMessage {
+  playerId: string
+  playerName: string
+  message: string
+  timestamp: string
+}
+
 interface SocketContextType {
   socket: Socket | null
   isConnected: boolean
@@ -61,6 +68,7 @@ interface SocketContextType {
   leaveGame: () => void
   gameState: GameState | null
   roomState: RoomState | null
+  chatMessages: ChatMessage[]
 }
 
 const SocketContext = createContext<SocketContextType>({
@@ -73,6 +81,7 @@ const SocketContext = createContext<SocketContextType>({
   sendMessage: () => {},
   surrender: () => {},
   leaveGame: () => {},
+  chatMessages: [],
   gameState: null,
   roomState: null,
 })
@@ -91,6 +100,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   const currentMatchIdRef = useRef<string>('')
   const [gameState, setGameState] = useState<GameState | null>(null)
   const [roomState, setRoomState] = useState<RoomState | null>(null)
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   const { data: session } = useSession()
 
   useEffect(() => {
@@ -125,9 +135,11 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       })
     })
 
-    socketInstance.on('player-joined', (data: { userId: string; playerName: string; roomState: RoomState }) => {
+    socketInstance.on('player-joined', (data: { player?: { id: string; name: string }; userId?: string; playerName?: string; roomState: RoomState }) => {
       console.log('Player joined:', data)
-      setRoomState(data.roomState)
+      if (data.roomState) {
+        setRoomState(data.roomState)
+      }
     })
 
     socketInstance.on('spectator-joined', (data: { userId: string; spectatorCount: number }) => {
@@ -246,7 +258,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
 
     socketInstance.on('message-received', (data: { playerId: string; playerName: string; message: string; timestamp: string }) => {
       console.log('Message received:', data)
-      // Handle chat messages
+      setChatMessages(prev => [...prev, data])
     })
 
     socketInstance.on('error', (data: { message: string }) => {
@@ -263,7 +275,11 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   const joinGame = (matchId: string) => {
     if (socket && session?.user?.id) {
       currentMatchIdRef.current = matchId
-      socket.emit('join-game', { matchId, userId: session.user.id })
+      socket.emit('join-game', { 
+        matchId, 
+        userId: session.user.id,
+        playerName: session.user.name || 'Player'
+      })
     }
   }
 
@@ -358,7 +374,8 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       surrender,
       leaveGame,
       gameState,
-      roomState
+      roomState,
+      chatMessages
     }}>
       {children}
     </SocketContext.Provider>

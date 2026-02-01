@@ -71,7 +71,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
         isAuthenticated: action.payload !== null,
         wallet: {
           ...state.wallet,
-          balance: action.payload?.walletBalance || 0,
+          balance: action.payload?.wallet?.balance || 0,
         },
       }
 
@@ -166,7 +166,9 @@ function appReducer(state: AppState, action: AppAction): AppState {
         user: state.user
           ? {
               ...state.user,
-              walletBalance: action.payload,
+              wallet: state.user.wallet
+                ? { ...state.user.wallet, balance: action.payload }
+                : { id: '', userId: state.user.id, balance: action.payload, lockedBalance: 0, version: 0, createdAt: new Date(), updatedAt: new Date() },
             }
           : null,
       }

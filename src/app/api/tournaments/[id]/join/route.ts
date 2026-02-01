@@ -18,18 +18,18 @@ export async function POST(
     const tournamentId = params.id
 
     // Check user's wallet balance
-    const user = await prisma.user.findUnique({
-      where: { id: session.user.id }
+    const wallet = await prisma.wallet.findUnique({
+      where: { userId: session.user.id }
     })
 
-    if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 })
+    if (!wallet) {
+      return NextResponse.json({ error: 'Wallet not found' }, { status: 404 })
     }
 
     // For mock tournament, assume entry fee is 50
     const entryFee = 50
     
-    if (user.walletBalance < entryFee) {
+    if (wallet.balance < entryFee) {
       return NextResponse.json(
         { error: 'Insufficient wallet balance' },
         { status: 400 }
@@ -37,9 +37,9 @@ export async function POST(
     }
 
     // Deduct entry fee
-    await prisma.user.update({
-      where: { id: session.user.id },
-      data: { walletBalance: { decrement: entryFee } }
+    await prisma.wallet.update({
+      where: { userId: session.user.id },
+      data: { balance: { decrement: entryFee } }
     })
 
     // Create transaction record
@@ -49,7 +49,9 @@ export async function POST(
         type: 'ENTRY_FEE',
         amount: -entryFee,
         description: `Tournament entry fee for tournament ${tournamentId}`,
-        status: 'COMPLETED'
+        status: 'COMPLETED',
+        balanceBefore: wallet.balance,
+        balanceAfter: wallet.balance - entryFee
       }
     })
 
@@ -57,7 +59,7 @@ export async function POST(
       message: 'Successfully joined tournament',
       tournamentId,
       entryFee,
-      remainingBalance: user.walletBalance - entryFee
+      remainingBalance: wallet.balance - entryFee
     })
 
   } catch (error) {
@@ -86,19 +88,28 @@ export async function DELETE(
     // Refund entry fee (for mock tournament)
     const entryFee = 50
 
-    await prisma.user.update({
-      where: { id: session.user.id },
-      data: { walletBalance: { increment: entryFee } }
+    // Get current wallet balance
+    const wallet = await prisma.wallet.findUnique({
+      where: { userId: session.user.id }
+    })
+    const currentBalance = wallet?.balance || 0
+
+    await prisma.wallet.upsert({
+      where: { userId: session.user.id },
+      update: { balance: { increment: entryFee } },
+      create: { userId: session.user.id, balance: entryFee }
     })
 
     // Create refund transaction
     await prisma.transaction.create({
       data: {
         userId: session.user.id,
-        type: 'ADMIN_CREDIT',
+        type: 'REFUND',
         amount: entryFee,
         description: `Tournament entry refund for tournament ${tournamentId}`,
-        status: 'COMPLETED'
+        status: 'COMPLETED',
+        balanceBefore: currentBalance,
+        balanceAfter: currentBalance + entryFee
       }
     })
 

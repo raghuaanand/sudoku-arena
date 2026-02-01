@@ -164,7 +164,7 @@ async function checkForNewAchievements(userId: string, unlockedIds: Set<string>)
       prisma.transaction.findMany({
         where: {
           userId,
-          type: 'ADD_FUNDS',
+          type: 'DEPOSIT',
           status: 'COMPLETED'
         },
         orderBy: { createdAt: 'desc' },

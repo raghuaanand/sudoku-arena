@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { TransactionType } from '@prisma/client'
 
 export async function GET() {
   try {
@@ -11,16 +12,22 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const user = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      select: { walletBalance: true }
+    // Get or create wallet
+    let wallet = await prisma.wallet.findUnique({
+      where: { userId: session.user.id }
     })
 
-    if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 })
+    if (!wallet) {
+      wallet = await prisma.wallet.create({
+        data: { userId: session.user.id }
+      })
     }
 
-    return NextResponse.json({ balance: user.walletBalance })
+    return NextResponse.json({ 
+      balance: wallet.balance,
+      escrowBalance: wallet.escrowBalance,
+      availableBalance: wallet.balance - wallet.escrowBalance
+    })
   } catch (error) {
     console.error('Wallet balance error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
@@ -43,52 +50,74 @@ export async function POST(request: NextRequest) {
 
     // Start a transaction
     const result = await prisma.$transaction(async (tx) => {
-      // Get current user with balance
-      const user = await tx.user.findUnique({
-        where: { id: session.user.id },
-        select: { walletBalance: true }
+      // Get or create wallet
+      let wallet = await tx.wallet.findUnique({
+        where: { userId: session.user.id }
       })
 
-      if (!user) {
-        throw new Error('User not found')
+      if (!wallet) {
+        wallet = await tx.wallet.create({
+          data: { userId: session.user.id }
+        })
       }
 
-      const currentBalance = user.walletBalance || 0
+      const currentBalance = wallet.balance
       let newBalance: number
+      let txType: TransactionType
 
       if (type === 'CREDIT') {
         newBalance = currentBalance + amount
+        txType = TransactionType.ADMIN_CREDIT
       } else if (type === 'DEBIT') {
-        if (currentBalance < amount) {
+        if (currentBalance - wallet.escrowBalance < amount) {
           throw new Error('Insufficient balance')
         }
         newBalance = currentBalance - amount
+        txType = TransactionType.ADMIN_DEBIT
       } else {
         throw new Error('Invalid transaction type')
       }
 
-      // Update user balance
-      const updatedUser = await tx.user.update({
-        where: { id: session.user.id },
-        data: { walletBalance: newBalance }
+      // Update wallet balance with optimistic locking
+      const updated = await tx.wallet.updateMany({
+        where: { 
+          userId: session.user.id,
+          version: wallet.version
+        },
+        data: { 
+          balance: newBalance,
+          version: { increment: 1 }
+        }
       })
+
+      if (updated.count === 0) {
+        throw new Error('Concurrent modification detected')
+      }
 
       // Create transaction record
       const transaction = await tx.transaction.create({
         data: {
           userId: session.user.id,
-          amount,
-          type,
+          amount: type === 'CREDIT' ? amount : -amount,
+          type: txType,
           description: description || `${type.toLowerCase()} transaction`,
-          status: 'COMPLETED'
+          status: 'COMPLETED',
+          balanceBefore: currentBalance,
+          balanceAfter: newBalance
         }
       })
 
-      return { user: updatedUser, transaction }
+      return { 
+        balance: newBalance,
+        escrowBalance: wallet.escrowBalance,
+        transaction 
+      }
     })
 
     return NextResponse.json({
-      balance: result.user.walletBalance,
+      balance: result.balance,
+      escrowBalance: result.escrowBalance,
+      availableBalance: result.balance - result.escrowBalance,
       transaction: result.transaction
     })
   } catch (error) {

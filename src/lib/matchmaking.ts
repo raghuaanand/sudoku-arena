@@ -197,7 +197,8 @@ export class SkillBasedMatchmaking {
         data: {
           type: player1.matchType,
           entryFee: 0, // Free multiplayer
-          prize: 0,
+          prizePool: 0,
+          sudokuSeed: `${Date.now()}-${player1.userId}-${player2.userId}`,
           sudokuGrid: JSON.stringify(sudokuGrid),
           solution: JSON.stringify(solution),
           player1Id: player1.userId,
@@ -253,7 +254,7 @@ export class SkillBasedMatchmaking {
     const completedTimes = recentMatches
       .filter(match => match.startedAt && match.endedAt)
       .map(match => {
-        const duration = new Date(match.endedAt!).getTime() - new Date(match.startedAt).getTime()
+        const duration = new Date(match.endedAt!).getTime() - new Date(match.startedAt!).getTime()
         return duration / 1000 // Convert to seconds
       })
 
@@ -398,7 +399,8 @@ export class SkillBasedMatchmaking {
         data: {
           type: player1.matchType,
           entryFee: 0, // Free multiplayer
-          prize: 0,
+          prizePool: 0,
+          sudokuSeed: `${Date.now()}-${player1.userId}-${player2.userId}`,
           sudokuGrid: JSON.stringify(sudokuGrid),
           solution: JSON.stringify(solution),
           player1Id: player1.userId,

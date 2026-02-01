@@ -67,16 +67,26 @@ app.prepare().then(async () => {
         await socket.join(`room_${matchId}`)
 
         if (GameRoomManager) {
+          // Check if room exists, create if not
+          let room = GameRoomManager.getRoom(`room_${matchId}`)
+          if (!room) {
+            console.log(`Room not found, creating room for match ${matchId}`)
+            room = await GameRoomManager.createRoom(matchId)
+          }
+          
           // Join game room through GameRoomManager
-          const room = await GameRoomManager.joinRoom(
+          room = await GameRoomManager.joinRoom(
             `room_${matchId}`,
             userId,
             data.playerName || 'Player',
             socket.id
           )
 
-          // Emit room state to user
+          // Emit room state to the joining user
           socket.emit('game-state', GameRoomManager.getRoomState(room))
+          
+          // Also broadcast to all other players in the room so they see the new player
+          socket.to(`room_${matchId}`).emit('game-state', GameRoomManager.getRoomState(room))
         } else {
           // Basic fallback - fetch match data from database
           try {
@@ -93,8 +103,9 @@ app.prepare().then(async () => {
 
             if (match) {
               const grid = match.sudokuGrid ? JSON.parse(match.sudokuGrid) : Array(9).fill(null).map(() => Array(9).fill(0))
+              const solution = match.solution ? JSON.parse(match.solution) : null
 
-              socket.emit('game-state', {
+              const roomState = {
                 id: `room_${matchId}`,
                 status: match.status,
                 players: [
@@ -122,7 +133,7 @@ app.prepare().then(async () => {
                 spectatorCount: 0,
                 gameState: {
                   grid: grid,
-                  solution: match.solution ? JSON.parse(match.solution) : null,
+                  solution: solution,
                   timeRemaining: 1800,
                   gameMode: match.gameMode || 'SIMULTANEOUS',
                   difficulty: match.difficulty || 'medium'
@@ -134,7 +145,13 @@ app.prepare().then(async () => {
                   privateRoom: false,
                   maxSpectators: 10
                 }
-              })
+              }
+              
+              // Emit to the joining player
+              socket.emit('game-state', roomState)
+              
+              // Also broadcast to all other players in the room
+              socket.to(`room_${matchId}`).emit('game-state', roomState)
             } else {
               socket.emit('error', { message: 'Match not found' })
             }
@@ -150,6 +167,88 @@ app.prepare().then(async () => {
       } catch (error) {
         console.error('Error joining game:', error)
         socket.emit('error', { message: error.message })
+      }
+    })
+
+    // Handle request for room state (for sync purposes)
+    socket.on('request-room-state', async () => {
+      try {
+        const socketData = socket.data
+
+        if (!socketData.matchId || !socketData.userId) {
+          return
+        }
+
+        if (GameRoomManager) {
+          const room = GameRoomManager.getRoom(`room_${socketData.matchId}`)
+          if (room) {
+            socket.emit('game-state', GameRoomManager.getRoomState(room))
+          }
+        } else {
+          // Fallback - fetch from database
+          const { PrismaClient } = require('@prisma/client')
+          const prisma = new PrismaClient()
+
+          const match = await prisma.match.findUnique({
+            where: { id: socketData.matchId },
+            include: {
+              player1: true,
+              player2: true
+            }
+          })
+
+          if (match) {
+            const grid = match.sudokuGrid ? JSON.parse(match.sudokuGrid) : Array(9).fill(null).map(() => Array(9).fill(0))
+            const solution = match.solution ? JSON.parse(match.solution) : null
+
+            const roomState = {
+              id: `room_${socketData.matchId}`,
+              status: match.status,
+              players: [
+                {
+                  id: match.player1Id,
+                  name: match.player1.name || 'Player 1',
+                  isReady: false,
+                  isConnected: true,
+                  score: 0,
+                  moves: 0,
+                  hintsUsed: 0,
+                  hintsRemaining: 3
+                },
+                ...(match.player2Id ? [{
+                  id: match.player2Id,
+                  name: match.player2?.name || 'Player 2',
+                  isReady: false,
+                  isConnected: true,
+                  score: 0,
+                  moves: 0,
+                  hintsUsed: 0,
+                  hintsRemaining: 3
+                }] : [])
+              ],
+              spectatorCount: 0,
+              gameState: {
+                grid: grid,
+                solution: solution,
+                timeRemaining: 1800,
+                gameMode: match.gameMode || 'SIMULTANEOUS',
+                difficulty: match.difficulty || 'medium'
+              },
+              settings: {
+                timeLimit: 1800,
+                hintsAllowed: 3,
+                spectatorMode: false,
+                privateRoom: false,
+                maxSpectators: 10
+              }
+            }
+            socket.emit('game-state', roomState)
+          }
+
+          await prisma.$disconnect()
+        }
+      } catch (error) {
+        console.error('Error requesting room state:', error)
       }
     })
 

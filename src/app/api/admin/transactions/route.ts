@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { TransactionType, Prisma } from '@prisma/client'
+import { TransactionType, TransactionStatus, Prisma } from '@prisma/client'
 
 // Force dynamic rendering for this route
 export const dynamic = 'force-dynamic'
@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get('page') || '1')
     const limit = parseInt(searchParams.get('limit') || '50')
     const type = searchParams.get('type') as TransactionType | null
-    const status = searchParams.get('status') as string | null
+    const status = searchParams.get('status') as TransactionStatus | null
     
     const skip = (page - 1) * limit
 
@@ -57,7 +57,7 @@ export async function GET(request: NextRequest) {
     // Get summary statistics
     const [totalRevenue, pendingAmount, failedCount] = await Promise.all([
       prisma.transaction.aggregate({
-        where: { status: 'COMPLETED', type: { in: ['ADD_FUNDS', 'ENTRY_FEE'] } },
+        where: { status: 'COMPLETED', type: { in: ['DEPOSIT', 'ENTRY_FEE'] } },
         _sum: { amount: true }
       }),
       prisma.transaction.aggregate({
@@ -131,12 +131,12 @@ export async function PUT(request: NextRequest) {
             data: { status: 'COMPLETED' }
           })
 
-          // If it's a credit transaction, update user balance
-          if (transaction.type === 'ADD_FUNDS' || transaction.type === 'ADMIN_CREDIT') {
-            await tx.user.update({
-              where: { id: transaction.userId },
+          // If it's a credit transaction, update wallet balance
+          if (transaction.type === 'DEPOSIT' || transaction.type === 'ADMIN_CREDIT') {
+            await tx.wallet.update({
+              where: { userId: transaction.userId },
               data: {
-                walletBalance: {
+                balance: {
                   increment: transaction.amount
                 }
               }

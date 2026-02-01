@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { TransactionType, TransactionStatus } from '@prisma/client'
 
 export async function POST(request: NextRequest) {
   try {
@@ -13,7 +14,10 @@ export async function POST(request: NextRequest) {
 
     const { amount, bankDetails } = await request.json()
 
-    if (!amount || amount < 100) {
+    // Convert to paisa if needed (assuming input is in rupees)
+    const amountInPaisa = amount * 100
+
+    if (!amount || amountInPaisa < 10000) { // ₹100 minimum
       return NextResponse.json({ error: 'Minimum withdrawal amount is ₹100' }, { status: 400 })
     }
 
@@ -23,48 +27,69 @@ export async function POST(request: NextRequest) {
 
     // Start a transaction
     const result = await prisma.$transaction(async (tx) => {
-      // Get current user with balance
-      const user = await tx.user.findUnique({
-        where: { id: session.user.id },
-        select: { walletBalance: true }
+      // Get or create wallet
+      let wallet = await tx.wallet.findUnique({
+        where: { userId: session.user.id }
       })
 
-      if (!user) {
-        throw new Error('User not found')
+      if (!wallet) {
+        wallet = await tx.wallet.create({
+          data: { userId: session.user.id }
+        })
       }
 
-      if (user.walletBalance < amount) {
+      const availableBalance = wallet.balance - wallet.escrowBalance
+      if (availableBalance < amountInPaisa) {
         throw new Error('Insufficient balance')
       }
 
-      // Deduct amount from wallet
-      await tx.user.update({
-        where: { id: session.user.id },
+      // Update wallet with optimistic locking
+      const updated = await tx.wallet.updateMany({
+        where: {
+          userId: session.user.id,
+          version: wallet.version
+        },
         data: {
-          walletBalance: {
-            decrement: amount
-          }
+          balance: { decrement: amountInPaisa },
+          totalWithdrawn: { increment: amountInPaisa },
+          version: { increment: 1 }
         }
       })
+
+      if (updated.count === 0) {
+        throw new Error('Concurrent modification detected')
+      }
 
       // Create withdrawal transaction
       const transaction = await tx.transaction.create({
         data: {
           userId: session.user.id,
-          amount,
-          type: 'WITHDRAW',
+          amount: -amountInPaisa,
+          type: TransactionType.WITHDRAWAL,
           description: `Wallet withdrawal - ₹${amount} to ${bankDetails.accountNumber}`,
-          status: 'PENDING'
+          status: TransactionStatus.PENDING,
+          balanceBefore: wallet.balance,
+          balanceAfter: wallet.balance - amountInPaisa,
+          metadata: {
+            bankAccountNumber: bankDetails.accountNumber.slice(-4), // Store only last 4 digits
+            ifscCode: bankDetails.ifscCode,
+            accountHolderName: bankDetails.accountHolderName
+          }
         }
       })
 
-      return { transaction, newBalance: user.walletBalance - amount }
+      return { 
+        transaction, 
+        newBalance: wallet.balance - amountInPaisa,
+        escrowBalance: wallet.escrowBalance
+      }
     })
 
     return NextResponse.json({
       message: 'Withdrawal request submitted successfully',
       transactionId: result.transaction.id,
-      newBalance: result.newBalance
+      newBalance: result.newBalance,
+      availableBalance: result.newBalance - result.escrowBalance
     })
   } catch (error: unknown) {
     console.error('Withdrawal error:', error)

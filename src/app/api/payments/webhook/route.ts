@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { validateWebhookSignature, parseWebhookEvent } from '@/lib/razorpay'
+import { PaymentStatus, TransactionType, TransactionStatus } from '@prisma/client'
 
 export async function POST(request: NextRequest) {
   try {
@@ -53,68 +54,98 @@ export async function POST(request: NextRequest) {
   }
 }
 
-async function handlePaymentSuccess(paymentData: any) {
+async function handlePaymentSuccess(paymentData: { order_id: string; id: string; amount: number }) {
   try {
     const orderId = paymentData.order_id
     const paymentId = paymentData.id
-    const amount = paymentData.amount / 100 // Convert from paisa to rupees
+    const amount = paymentData.amount // Already in paisa
 
-    // Find the transaction by Razorpay order ID
-    const transaction = await prisma.transaction.findFirst({
+    // Find the payment order by Razorpay order ID
+    const paymentOrder = await prisma.paymentOrder.findFirst({
       where: {
-        razorpayId: orderId,
-        status: 'PENDING'
-      },
-      include: {
-        user: true
+        razorpayOrderId: orderId,
+        status: PaymentStatus.CREATED
       }
     })
 
-    if (!transaction) {
-      console.error('Transaction not found for order:', orderId)
+    if (!paymentOrder) {
+      console.error('Payment order not found for order:', orderId)
       return
     }
 
-    // Update transaction and user wallet in a database transaction
+    // Update payment order and wallet in a database transaction
     await prisma.$transaction(async (tx) => {
-      // Update transaction status
-      await tx.transaction.update({
-        where: { id: transaction.id },
+      // Update payment order status
+      await tx.paymentOrder.update({
+        where: { id: paymentOrder.id },
         data: {
-          status: 'COMPLETED',
-          razorpayId: paymentId
+          status: PaymentStatus.CAPTURED,
+          razorpayPaymentId: paymentId,
+          paidAt: new Date(),
+          verifiedAt: new Date()
         }
       })
 
-      // Update user wallet balance
-      await tx.user.update({
-        where: { id: transaction.userId },
+      // Get or create wallet
+      let wallet = await tx.wallet.findUnique({
+        where: { userId: paymentOrder.userId }
+      })
+
+      if (!wallet) {
+        wallet = await tx.wallet.create({
+          data: { userId: paymentOrder.userId }
+        })
+      }
+
+      // Update wallet with optimistic locking
+      const newBalance = wallet.balance + amount
+      await tx.wallet.updateMany({
+        where: {
+          userId: paymentOrder.userId,
+          version: wallet.version
+        },
         data: {
-          walletBalance: {
-            increment: amount
-          }
+          balance: newBalance,
+          totalDeposited: { increment: amount },
+          version: { increment: 1 }
+        }
+      })
+
+      // Create transaction record
+      await tx.transaction.create({
+        data: {
+          userId: paymentOrder.userId,
+          amount: amount,
+          type: TransactionType.DEPOSIT,
+          status: TransactionStatus.COMPLETED,
+          paymentOrderId: paymentOrder.id,
+          description: `Wallet recharge - ₹${amount / 100}`,
+          balanceBefore: wallet.balance,
+          balanceAfter: newBalance
         }
       })
     })
 
-    console.log(`Payment successful for user ${transaction.userId}, amount: ₹${amount}`)
+    console.log(`Payment successful for user ${paymentOrder.userId}, amount: ₹${amount / 100}`)
   } catch (error) {
     console.error('Error handling payment success:', error)
   }
 }
 
-async function handlePaymentFailed(paymentData: any) {
+async function handlePaymentFailed(paymentData: { order_id: string; error_description?: string }) {
   try {
     const orderId = paymentData.order_id
 
-    // Find and update the transaction
-    await prisma.transaction.updateMany({
+    // Find and update the payment order
+    await prisma.paymentOrder.updateMany({
       where: {
-        razorpayId: orderId,
-        status: 'PENDING'
+        razorpayOrderId: orderId,
+        status: PaymentStatus.CREATED
       },
       data: {
-        status: 'FAILED'
+        status: PaymentStatus.FAILED,
+        failedAt: new Date(),
+        errorMessage: paymentData.error_description || 'Payment failed'
       }
     })
 
@@ -124,51 +155,77 @@ async function handlePaymentFailed(paymentData: any) {
   }
 }
 
-async function handleRefundProcessed(refundData: any) {
+async function handleRefundProcessed(refundData: { payment_id: string; id: string; amount: number }) {
   try {
     const paymentId = refundData.payment_id
-    const refundAmount = refundData.amount / 100 // Convert from paisa to rupees
+    const refundAmount = refundData.amount // in paisa
 
-    // Find the original transaction
-    const transaction = await prisma.transaction.findFirst({
+    // Find the original payment order
+    const paymentOrder = await prisma.paymentOrder.findFirst({
       where: {
-        razorpayId: paymentId,
-        status: 'COMPLETED'
+        razorpayPaymentId: paymentId,
+        status: PaymentStatus.CAPTURED
       }
     })
 
-    if (!transaction) {
-      console.error('Transaction not found for refund:', paymentId)
+    if (!paymentOrder) {
+      console.error('Payment order not found for refund:', paymentId)
       return
     }
 
-    // Create refund transaction and update user wallet
+    // Create refund transaction and update wallet
     await prisma.$transaction(async (tx) => {
-      // Create refund transaction record
-      await tx.transaction.create({
+      // Update payment order status
+      await tx.paymentOrder.update({
+        where: { id: paymentOrder.id },
         data: {
-          userId: transaction.userId,
-          amount: -refundAmount,
-          type: 'ADMIN_CREDIT',
-          description: `Refund for transaction ${transaction.id}`,
-          status: 'completed',
-          razorpayId: refundData.id
+          status: PaymentStatus.REFUNDED,
+          refundedAt: new Date()
         }
       })
 
-      // Update user wallet balance
-      await tx.user.update({
-        where: { id: transaction.userId },
+      // Get wallet
+      const wallet = await tx.wallet.findUnique({
+        where: { userId: paymentOrder.userId }
+      })
+
+      if (!wallet) {
+        throw new Error('Wallet not found for refund')
+      }
+
+      // Deduct refund amount from wallet
+      const newBalance = wallet.balance - refundAmount
+      await tx.wallet.updateMany({
+        where: {
+          userId: paymentOrder.userId,
+          version: wallet.version
+        },
         data: {
-          walletBalance: {
-            decrement: refundAmount
-          }
+          balance: newBalance,
+          totalDeposited: { decrement: refundAmount },
+          version: { increment: 1 }
+        }
+      })
+
+      // Create refund transaction record
+      await tx.transaction.create({
+        data: {
+          userId: paymentOrder.userId,
+          amount: -refundAmount,
+          type: TransactionType.REFUND,
+          description: `Refund for payment ${paymentOrder.id}`,
+          status: TransactionStatus.COMPLETED,
+          paymentOrderId: paymentOrder.id,
+          referenceId: refundData.id,
+          balanceBefore: wallet.balance,
+          balanceAfter: newBalance
         }
       })
     })
 
-    console.log(`Refund processed for user ${transaction.userId}, amount: ₹${refundAmount}`)
+    console.log(`Refund processed for user ${paymentOrder.userId}, amount: ₹${refundAmount / 100}`)
   } catch (error) {
     console.error('Error handling refund:', error)
   }
 }
+

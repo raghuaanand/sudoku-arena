@@ -1,7 +1,7 @@
 // Advanced tournament scheduling and automation system
 // This module handles automated tournament progression, scheduling, and management
 
-import { PrismaClient } from '@prisma/client'
+import { PrismaClient, TransactionStatus } from '@prisma/client'
 
 const prisma = new PrismaClient()
 
@@ -153,6 +153,14 @@ export class TournamentScheduler {
       // Calculate prize amounts (simplified)
       const totalPrize = tournament.entryFee * 10 // Simplified calculation
 
+      // Get current wallet balance
+      const wallet = await prisma.wallet.findUnique({
+        where: { userId: tournament.winnerId }
+      })
+
+      const balanceBefore = wallet?.balance || 0
+      const balanceAfter = balanceBefore + totalPrize
+
       // Award winner
       await prisma.transaction.create({
         data: {
@@ -160,15 +168,21 @@ export class TournamentScheduler {
           amount: totalPrize,
           type: 'MATCH_WIN',
           description: `Tournament ${tournament.name} - Winner Prize`,
-          status: 'completed'
+          status: TransactionStatus.COMPLETED,
+          balanceBefore,
+          balanceAfter
         }
       })
 
       // Update user wallet
-      await prisma.user.update({
-        where: { id: tournament.winnerId },
-        data: {
-          walletBalance: {
+      await prisma.wallet.upsert({
+        where: { userId: tournament.winnerId },
+        create: {
+          userId: tournament.winnerId,
+          balance: totalPrize
+        },
+        update: {
+          balance: {
             increment: totalPrize
           }
         }
@@ -203,21 +217,35 @@ export class TournamentScheduler {
 
       // Refund all participants
       for (const participant of tournament.participants) {
+        // Get current wallet balance
+        const wallet = await prisma.wallet.findUnique({
+          where: { userId: participant.userId }
+        })
+
+        const balanceBefore = wallet?.balance || 0
+        const balanceAfter = balanceBefore + tournament.entryFee
+
         await prisma.transaction.create({
           data: {
             userId: participant.userId,
             amount: tournament.entryFee,
             type: 'ADMIN_CREDIT',
             description: `Tournament ${tournament.name} - Cancelled Refund: ${reason}`,
-            status: 'completed'
+            status: TransactionStatus.COMPLETED,
+            balanceBefore,
+            balanceAfter
           }
         })
 
         // Update user wallet
-        await prisma.user.update({
-          where: { id: participant.userId },
-          data: {
-            walletBalance: {
+        await prisma.wallet.upsert({
+          where: { userId: participant.userId },
+          create: {
+            userId: participant.userId,
+            balance: tournament.entryFee
+          },
+          update: {
+            balance: {
               increment: tournament.entryFee
             }
           }

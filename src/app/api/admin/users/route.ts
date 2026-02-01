@@ -52,7 +52,9 @@ export async function GET(request: NextRequest) {
           id: true,
           name: true,
           email: true,
-          walletBalance: true,
+          wallet: {
+            select: { balance: true }
+          },
           createdAt: true,
           _count: {
             select: {
@@ -71,6 +73,7 @@ export async function GET(request: NextRequest) {
 
     const usersWithStats = users.map(user => ({
       ...user,
+      walletBalance: user.wallet?.balance || 0,
       totalMatches: user._count.player1Matches + user._count.player2Matches,
       totalTransactions: user._count.transactions
     }))
@@ -122,13 +125,24 @@ export async function PUT(request: NextRequest) {
         }
 
         await prisma.$transaction(async (tx) => {
-          // Update user balance
-          await tx.user.update({
-            where: { id: userId },
-            data: {
-              walletBalance: {
+          // Get current wallet balance
+          const wallet = await tx.wallet.findUnique({
+            where: { userId }
+          })
+          const currentBalance = wallet?.balance || 0
+          const newBalance = currentBalance + amount
+
+          // Update wallet balance
+          await tx.wallet.upsert({
+            where: { userId },
+            update: {
+              balance: {
                 increment: amount
               }
+            },
+            create: {
+              userId,
+              balance: Math.max(0, amount)
             }
           })
 
@@ -139,7 +153,9 @@ export async function PUT(request: NextRequest) {
               amount: Math.abs(amount),
               type: amount > 0 ? 'ADMIN_CREDIT' : 'ADMIN_DEBIT',
               description: `Admin ${amount > 0 ? 'credit' : 'debit'} - ₹${Math.abs(amount)}`,
-              status: 'COMPLETED'
+              status: 'COMPLETED',
+              balanceBefore: currentBalance,
+              balanceAfter: newBalance
             }
           })
         })

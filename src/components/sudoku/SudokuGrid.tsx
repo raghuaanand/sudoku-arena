@@ -16,6 +16,9 @@ const SudokuCellComponent: React.FC<SudokuCellProps> = ({
   isHighlighted,
   isError,
   isReadonly,
+  isUserEntry,
+  isHint,
+  isRevealed,
   onChange,
   onSelect,
 }) => {
@@ -74,14 +77,25 @@ const SudokuCellComponent: React.FC<SudokuCellProps> = ({
         
         // State-based styling
         isSelected
-          ? 'bg-primary/15 text-primary ring-2 ring-primary ring-inset'
+          ? 'bg-primary/15 ring-2 ring-primary ring-inset'
           : isHighlighted
           ? 'bg-primary/5'
           : isError
-          ? 'bg-destructive/10 text-destructive'
+          ? 'bg-destructive/10'
           : isReadonly && value !== null
-          ? 'bg-muted/50 text-foreground font-bold'
+          ? 'bg-muted/50'
           : 'bg-card hover:bg-muted/30',
+        
+        // Text color based on cell type
+        isError
+          ? 'text-destructive'
+          : isRevealed
+          ? 'text-purple-600 dark:text-purple-400 font-medium' // Revealed answers in purple
+          : isHint
+          ? 'text-green-600 dark:text-green-400 font-medium' // Hints in green
+          : isUserEntry
+          ? 'text-blue-600 dark:text-blue-400 font-medium' // User entries in blue
+          : 'text-foreground font-bold', // Original puzzle in bold black
         
         // Cursor
         isReadonly ? 'cursor-default' : 'cursor-pointer'
@@ -100,10 +114,13 @@ const SudokuCellComponent: React.FC<SudokuCellProps> = ({
 // Main Sudoku Grid Component
 export const SudokuGridComponent: React.FC<SudokuGridProps> = ({
   grid,
+  originalPuzzle,
   solution,
   isReadonly = false,
   onGridChange,
   className,
+  hintCells,
+  revealedCells,
 }) => {
   const [selectedCell, setSelectedCell] = useState<{ row: number; col: number } | null>(null)
   const [highlightedNumber, setHighlightedNumber] = useState<number | null>(null)
@@ -128,9 +145,12 @@ export const SudokuGridComponent: React.FC<SudokuGridProps> = ({
         })
       )
 
-      // Check for errors
+      // Check for errors using a grid with 0s for validation
+      const gridForValidation = grid.map((r, ri) =>
+        r.map((c, ci) => (ri === row && ci === col ? 0 : (c || 0)))
+      )
       const newErrors = new Set<string>()
-      if (value !== 0 && !isValidMove(grid, row, col, value)) {
+      if (value !== 0 && !isValidMove(gridForValidation, row, col, value)) {
         newErrors.add(`${row}-${col}`)
       }
       setErrors(newErrors)
@@ -202,7 +222,23 @@ export const SudokuGridComponent: React.FC<SudokuGridProps> = ({
             const isSelected = selectedCell?.row === rowIndex && selectedCell?.col === colIndex
             const isHighlighted = highlightedNumber !== null && cell === highlightedNumber && !isSelected
             const isError = errors.has(cellKey)
-            const cellIsReadonly = isReadonly || (solution && solution[rowIndex][colIndex] !== null) || false
+            
+            // A cell is part of the original puzzle if it has a value in originalPuzzle
+            const isOriginalCell = originalPuzzle 
+              ? (originalPuzzle[rowIndex][colIndex] !== null && originalPuzzle[rowIndex][colIndex] !== 0)
+              : false
+            
+            // Cell is readonly only if it's part of the original puzzle or global readonly
+            const cellIsReadonly = isReadonly || isOriginalCell
+            
+            // Check if this cell was filled by a hint
+            const isHint = hintCells?.has(cellKey) || false
+            
+            // Check if this cell was revealed after submit (answer shown)
+            const isRevealed = revealedCells?.has(cellKey) || false
+            
+            // A cell is a user entry if it has a value but wasn't in the original puzzle, not a hint, and not revealed
+            const isUserEntry = !isOriginalCell && !isHint && !isRevealed && cell !== null
 
             return (
               <SudokuCellComponent
@@ -214,6 +250,9 @@ export const SudokuGridComponent: React.FC<SudokuGridProps> = ({
                 isHighlighted={isHighlighted}
                 isError={isError}
                 isReadonly={cellIsReadonly}
+                isUserEntry={isUserEntry}
+                isHint={isHint}
+                isRevealed={isRevealed}
                 onChange={handleCellChange}
                 onSelect={handleCellSelect}
               />

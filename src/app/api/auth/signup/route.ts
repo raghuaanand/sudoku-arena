@@ -29,19 +29,30 @@ export async function POST(request: NextRequest) {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 12)
 
-    // Create user
-    const user = await prisma.user.create({
-      data: {
-        name,
-        email,
-        password: hashedPassword,
-        walletBalance: 0, // Start with 0 balance
-      },
+    // Create user with wallet in a transaction
+    const result = await prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: {
+          name,
+          email,
+          password: hashedPassword,
+        },
+      })
+
+      // Create associated wallet
+      await tx.wallet.create({
+        data: {
+          userId: user.id,
+          balance: 0,
+        }
+      })
+
+      return user
     })
 
     // Remove password from response
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { password: _, ...userWithoutPassword } = user
+    const { password: _, ...userWithoutPassword } = result
 
     return NextResponse.json(
       { 

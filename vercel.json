@@ -5,12 +5,24 @@
   "functions": {
     "src/app/api/socket/io/route.ts": {
       "maxDuration": 30
+    },
+    "src/app/api/game/[matchId]/move/route.ts": {
+      "maxDuration": 10
+    },
+    "src/app/api/cron/maintenance/route.ts": {
+      "maxDuration": 60
     }
   },
   "rewrites": [
     {
       "source": "/socket.io/(.*)",
       "destination": "/api/socket/io"
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/maintenance",
+      "schedule": "* * * * *"
     }
   ]
 }

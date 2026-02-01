@@ -21,8 +21,8 @@ export async function GET(request: NextRequest) {
     
     const skip = (page - 1) * limit
 
-    // Validate type parameter against enum values
-    const validTypes = ['ADD_FUNDS', 'WITHDRAW', 'MATCH_WIN', 'ENTRY_FEE', 'ADMIN_CREDIT', 'ADMIN_DEBIT']
+    // Validate type parameter against new enum values
+    const validTypes = ['DEPOSIT', 'WITHDRAWAL', 'ENTRY_FEE', 'ESCROW_LOCK', 'ESCROW_RELEASE', 'WINNINGS', 'REFUND', 'PLATFORM_FEE', 'ADMIN_CREDIT', 'ADMIN_DEBIT']
     const where = {
       userId: session.user.id,
       ...(type && validTypes.includes(type) && { type: type as any })
@@ -40,16 +40,21 @@ export async function GET(request: NextRequest) {
           type: true,
           description: true,
           status: true,
-          createdAt: true
+          createdAt: true,
+          balanceBefore: true,
+          balanceAfter: true
         }
       }),
       prisma.transaction.count({ where })
     ])
 
     // Map transaction types to CREDIT/DEBIT for frontend compatibility
+    const creditTypes = ['DEPOSIT', 'WINNINGS', 'ESCROW_RELEASE', 'REFUND', 'ADMIN_CREDIT']
     const transactions = rawTransactions.map(transaction => ({
       ...transaction,
-      type: ['ADD_FUNDS', 'MATCH_WIN', 'ADMIN_CREDIT'].includes(transaction.type) ? 'CREDIT' : 'DEBIT'
+      // Convert paisa to rupees for display
+      amount: Math.abs(transaction.amount) / 100,
+      type: creditTypes.includes(transaction.type) ? 'CREDIT' : 'DEBIT'
     }))
 
     return NextResponse.json({
