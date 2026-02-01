@@ -33,12 +33,40 @@ const httpServer = createServer((req, res) => {
   res.end()
 })
 
+// Build allowed origins for CORS
+const getAllowedOrigins = () => {
+  if (dev) {
+    return [`http://localhost:${nextPort}`, 'http://127.0.0.1:' + nextPort]
+  }
+  
+  // In production, allow configured origins
+  const origins = []
+  
+  // Main production URL
+  if (process.env.NEXTAUTH_URL) {
+    origins.push(process.env.NEXTAUTH_URL)
+  }
+  
+  // Additional allowed origins (comma-separated)
+  if (process.env.ALLOWED_ORIGINS) {
+    origins.push(...process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim()))
+  }
+  
+  // Return origins or allow Vercel preview deployments
+  return origins.length > 0 ? origins : (origin, callback) => {
+    // Allow Vercel preview deployments
+    if (!origin || origin.endsWith('.vercel.app')) {
+      callback(null, true)
+    } else {
+      callback(new Error('Not allowed by CORS'))
+    }
+  }
+}
+
 // Initialize Socket.IO
 const io = new Server(httpServer, {
   cors: {
-    origin: dev 
-      ? [`http://localhost:${nextPort}`, 'http://127.0.0.1:' + nextPort]
-      : process.env.NEXTAUTH_URL || '*',
+    origin: getAllowedOrigins(),
     methods: ['GET', 'POST'],
     credentials: true
   },

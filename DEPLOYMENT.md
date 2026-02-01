@@ -203,6 +203,9 @@ DATABASE_URL=postgresql://...?sslmode=require
 NEXTAUTH_SECRET=your-secret
 NEXTAUTH_URL=https://your-app.vercel.app
 
+# WebSocket Server (Render)
+NEXT_PUBLIC_SOCKET_URL=https://sudoku-arena-socket.onrender.com
+
 # Razorpay (use LIVE keys for production!)
 RAZORPAY_KEY_ID=rzp_live_xxxxx
 RAZORPAY_KEY_SECRET=xxxxx
@@ -256,6 +259,67 @@ git push origin main
 
 # Or trigger manually in Vercel dashboard
 ```
+
+---
+
+## Render Deployment (WebSocket Server)
+
+Vercel doesn't support WebSocket connections. Deploy the Socket.IO server on Render's free tier.
+
+### Step 1: Create Render Account
+1. Go to [render.com](https://render.com)
+2. Sign up with GitHub (recommended for auto-deploy)
+
+### Step 2: Create Web Service
+1. Click "New" → "Web Service"
+2. Connect your GitHub repository
+3. Configure the service:
+
+| Setting | Value |
+|---------|-------|
+| **Name** | `sudoku-arena-socket` |
+| **Region** | Choose closest to your users |
+| **Branch** | `main` |
+| **Runtime** | `Node` |
+| **Build Command** | `npm install` |
+| **Start Command** | `node socket-server.js` |
+| **Plan** | `Free` |
+
+### Step 3: Configure Environment Variables
+
+In Render Dashboard → Environment:
+
+```
+NODE_ENV=production
+SOCKET_PORT=10000
+NEXTAUTH_URL=https://your-app.vercel.app
+```
+
+> **Note:** Render's free tier uses port 10000 internally, but your service will be accessible via HTTPS on port 443.
+
+### Step 4: Deploy & Get URL
+
+1. Click "Create Web Service"
+2. Wait for the first deploy to complete
+3. Copy your service URL: `https://sudoku-arena-socket.onrender.com`
+
+### Step 5: Update Vercel Environment
+
+In Vercel Dashboard → Settings → Environment Variables:
+
+```
+NEXT_PUBLIC_SOCKET_URL=https://sudoku-arena-socket.onrender.com
+```
+
+Redeploy your Vercel app for the changes to take effect.
+
+### Free Tier Limitations
+
+⚠️ **Render free tier spins down after 15 minutes of inactivity**
+
+- First connection after spin-down takes ~30-50 seconds
+- For a demo project, this is acceptable
+- For production, consider Render's paid tier ($7/month)
 
 ---
 
@@ -358,11 +422,11 @@ npx prisma generate
 4. Look for errors in Vercel logs
 
 ### Socket.IO Not Working
-- Vercel doesn't support WebSocket upgrade
-- Uses long-polling fallback automatically
-- For real-time games, consider:
-  - Separate WebSocket server (Railway, Render)
-  - Pusher/Ably for real-time events
+1. Verify `NEXT_PUBLIC_SOCKET_URL` is set correctly in Vercel
+2. Check Render service is running (not spun down)
+3. Test WebSocket health: `curl https://sudoku-arena-socket.onrender.com/health`
+4. Check CORS - `NEXTAUTH_URL` env var on Render should match your Vercel domain
+5. For slow connections: Render free tier spins down after 15min inactivity
 
 ### Payment Failures
 1. Check Razorpay Dashboard for error details

@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: sudoku-arena-socket
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node socket-server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SOCKET_PORT
+        value: "10000"
+      - key: NEXTAUTH_URL
+        sync: false  # You'll set this manually to your Vercel URL
+    healthCheckPath: /health
